@@ -1,0 +1,689 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 70;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A0E559FB5550FA06A4DB4D2 /* MainContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */; };
+		1030163FC1BE1B395C6ED68C /* DictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15185072F8B8D53AC6DF8135 /* DictionaryView.swift */; };
+		22A819C203774FF7FD7A5488 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E721750EAFD80E5DA5AC75 /* NotesView.swift */; };
+		298CD09B8C28CBD77A77A1EE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */; };
+		361A3DF74FC83684535C974B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */; };
+		52019022716C6BEF2018B2E1 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026A2F3A91C77E08206D7CFE /* LoginView.swift */; };
+		5CE76EEEAE2B5DB873E1952D /* NovaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70504225547C20F1A0AED13 /* NovaApp.swift */; };
+		6B57BDD24561AA42977AC76A /* AuthenticationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */; };
+		713D77D04A7362B96883A3A6 /* BankOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */; };
+		9A0DAE14D32268F6E48A22E0 /* FinanceOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */; };
+		A071D7E6517925E4A9E31368 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 637AAC74CB559267BE09B1FE /* FirebaseCore */; };
+		B67EDCE5285EDF8AC40EBF93 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */; };
+		BD755815B3EE2EB7E0EED21C /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46EA1B230E84173EFBBC015 /* HomeView.swift */; };
+		C0D3D5F6300CF69E009287D7 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C0D3D5F5300CF69E009287D7 /* WidgetKit.framework */; };
+		C0D3D5F8300CF69E009287D7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */; };
+		C0D3D605300CF6A0009287D7 /* NovaWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0D3D60E300CFAB1009287D7 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D60D300CFAB1009287D7 /* FirebaseFirestore */; };
+		C0D3D610300CFACE009287D7 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D60F300CFACE009287D7 /* FirebaseAuth */; };
+		C0D3D612300CFAD1009287D7 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D611300CFAD1009287D7 /* FirebaseCore */; };
+		C0D3D614300CFAE0009287D7 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D613300CFAE0009287D7 /* FirebaseFirestore */; };
+		C0D3D615300CFED1009287D7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */; };
+		C0D3D616300CFED1009287D7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */; };
+		CA60C501AD1A716BE86C3EC6 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59874D693C11AB6A5CE5D36E /* MainTabView.swift */; };
+		D1F1ADBF5DC874E966E49C7B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */; };
+		E03565542FCC56C52CB1C85F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = B12261CCAE285434D1199B87 /* GoogleSignIn */; };
+		E41BAF3DCBA5BE28C7509336 /* SideMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFD221A99E08848AA622855 /* SideMenuView.swift */; };
+		EA8E51CDCDAAA2714B377AEA /* TagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */; };
+		EE7D6942DF86C7B353FE44A3 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */; };
+		F1CA8B158E0B4EC1C0C05862 /* RecentlyDeletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C0D3D603300CF6A0009287D7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F545DF30FAB818DABAFA99F1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0D3D5F2300CF69E009287D7;
+			remoteInfo = NovaWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C0D3D60A300CF6A0009287D7 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C0D3D605300CF6A0009287D7 /* NovaWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		026A2F3A91C77E08206D7CFE /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		15185072F8B8D53AC6DF8135 /* DictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryView.swift; sourceTree = "<group>"; };
+		1B0726CC913A2D745F9ADBB9 /* Nova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nova.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceOperationsView.swift; sourceTree = "<group>"; };
+		2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainContainerView.swift; sourceTree = "<group>"; };
+		2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentlyDeletedView.swift; sourceTree = "<group>"; };
+		4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagsView.swift; sourceTree = "<group>"; };
+		59874D693C11AB6A5CE5D36E /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationViewModel.swift; sourceTree = "<group>"; };
+		94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		A46EA1B230E84173EFBBC015 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		AAFD221A99E08848AA622855 /* SideMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideMenuView.swift; sourceTree = "<group>"; };
+		B12EDC68B5E90E03CA91C90D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NovaWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0D3D5F5300CF69E009287D7 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		C0D3D60B300CF6DA009287D7 /* Nova.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Nova.entitlements; sourceTree = "<group>"; };
+		C0D3D60C300CF721009287D7 /* NovaWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NovaWidgetExtension.entitlements; sourceTree = "<group>"; };
+		D70504225547C20F1A0AED13 /* NovaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NovaApp.swift; sourceTree = "<group>"; };
+		D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankOperationsView.swift; sourceTree = "<group>"; };
+		D8E721750EAFD80E5DA5AC75 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C0D3D606300CF6A0009287D7 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		C0D3D5F9300CF69E009287D7 /* NovaWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C0D3D606300CF6A0009287D7 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = NovaWidget; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C0D3D5F0300CF69E009287D7 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0D3D5F8300CF69E009287D7 /* SwiftUI.framework in Frameworks */,
+				C0D3D610300CFACE009287D7 /* FirebaseAuth in Frameworks */,
+				C0D3D612300CFAD1009287D7 /* FirebaseCore in Frameworks */,
+				C0D3D614300CFAE0009287D7 /* FirebaseFirestore in Frameworks */,
+				C0D3D5F6300CF69E009287D7 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E0FD43DC449BA0E8F4915AAD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A071D7E6517925E4A9E31368 /* FirebaseCore in Frameworks */,
+				EE7D6942DF86C7B353FE44A3 /* FirebaseAuth in Frameworks */,
+				E03565542FCC56C52CB1C85F /* GoogleSignIn in Frameworks */,
+				C0D3D60E300CFAB1009287D7 /* FirebaseFirestore in Frameworks */,
+				361A3DF74FC83684535C974B /* GoogleSignInSwift in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1BE92766E93A3F687D850524 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1B0726CC913A2D745F9ADBB9 /* Nova.app */,
+				C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		572CB3CFDB31AD33B6DEA825 /* Nova */ = {
+			isa = PBXGroup;
+			children = (
+				C0D3D60B300CF6DA009287D7 /* Nova.entitlements */,
+				BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */,
+				7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */,
+				D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */,
+				B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */,
+				15185072F8B8D53AC6DF8135 /* DictionaryView.swift */,
+				1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */,
+				94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */,
+				A46EA1B230E84173EFBBC015 /* HomeView.swift */,
+				B12EDC68B5E90E03CA91C90D /* Info.plist */,
+				026A2F3A91C77E08206D7CFE /* LoginView.swift */,
+				2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */,
+				59874D693C11AB6A5CE5D36E /* MainTabView.swift */,
+				D8E721750EAFD80E5DA5AC75 /* NotesView.swift */,
+				D70504225547C20F1A0AED13 /* NovaApp.swift */,
+				3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */,
+				2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */,
+				AAFD221A99E08848AA622855 /* SideMenuView.swift */,
+				4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */,
+			);
+			path = Nova;
+			sourceTree = "<group>";
+		};
+		7D73225FC3919E43E853DF14 = {
+			isa = PBXGroup;
+			children = (
+				C0D3D60C300CF721009287D7 /* NovaWidgetExtension.entitlements */,
+				572CB3CFDB31AD33B6DEA825 /* Nova */,
+				C0D3D5F9300CF69E009287D7 /* NovaWidget */,
+				C0D3D5F4300CF69E009287D7 /* Frameworks */,
+				1BE92766E93A3F687D850524 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C0D3D5F4300CF69E009287D7 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C0D3D5F5300CF69E009287D7 /* WidgetKit.framework */,
+				C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		001D72F45BCA585CA4A811B2 /* Nova */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B0AB78949553C299C15D72F2 /* Build configuration list for PBXNativeTarget "Nova" */;
+			buildPhases = (
+				FA87E81089124B17AD253BE1 /* Sources */,
+				9724B59D8C49BD4C8C8CCCD3 /* Resources */,
+				E0FD43DC449BA0E8F4915AAD /* Frameworks */,
+				C0D3D60A300CF6A0009287D7 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0D3D604300CF6A0009287D7 /* PBXTargetDependency */,
+			);
+			name = Nova;
+			packageProductDependencies = (
+				637AAC74CB559267BE09B1FE /* FirebaseCore */,
+				B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */,
+				B12261CCAE285434D1199B87 /* GoogleSignIn */,
+				6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */,
+				C0D3D60D300CFAB1009287D7 /* FirebaseFirestore */,
+			);
+			productName = Nova;
+			productReference = 1B0726CC913A2D745F9ADBB9 /* Nova.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0D3D607300CF6A0009287D7 /* Build configuration list for PBXNativeTarget "NovaWidgetExtension" */;
+			buildPhases = (
+				C0D3D5EF300CF69E009287D7 /* Sources */,
+				C0D3D5F0300CF69E009287D7 /* Frameworks */,
+				C0D3D5F1300CF69E009287D7 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0D3D5F9300CF69E009287D7 /* NovaWidget */,
+			);
+			name = NovaWidgetExtension;
+			packageProductDependencies = (
+				C0D3D60F300CFACE009287D7 /* FirebaseAuth */,
+				C0D3D611300CFAD1009287D7 /* FirebaseCore */,
+				C0D3D613300CFAE0009287D7 /* FirebaseFirestore */,
+			);
+			productName = NovaWidgetExtension;
+			productReference = C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F545DF30FAB818DABAFA99F1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					C0D3D5F2300CF69E009287D7 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+				};
+			};
+			buildConfigurationList = D007772F3651288F5AF39FA5 /* Build configuration list for PBXProject "Nova" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7D73225FC3919E43E853DF14;
+			packageReferences = (
+				A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				494DC63A732B127231499085 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				001D72F45BCA585CA4A811B2 /* Nova */,
+				C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		9724B59D8C49BD4C8C8CCCD3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B67EDCE5285EDF8AC40EBF93 /* Assets.xcassets in Resources */,
+				C0D3D615300CFED1009287D7 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0D3D5F1300CF69E009287D7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0D3D616300CFED1009287D7 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C0D3D5EF300CF69E009287D7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA87E81089124B17AD253BE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B57BDD24561AA42977AC76A /* AuthenticationViewModel.swift in Sources */,
+				713D77D04A7362B96883A3A6 /* BankOperationsView.swift in Sources */,
+				298CD09B8C28CBD77A77A1EE /* ContentView.swift in Sources */,
+				1030163FC1BE1B395C6ED68C /* DictionaryView.swift in Sources */,
+				9A0DAE14D32268F6E48A22E0 /* FinanceOperationsView.swift in Sources */,
+				BD755815B3EE2EB7E0EED21C /* HomeView.swift in Sources */,
+				52019022716C6BEF2018B2E1 /* LoginView.swift in Sources */,
+				0A0E559FB5550FA06A4DB4D2 /* MainContainerView.swift in Sources */,
+				CA60C501AD1A716BE86C3EC6 /* MainTabView.swift in Sources */,
+				22A819C203774FF7FD7A5488 /* NotesView.swift in Sources */,
+				5CE76EEEAE2B5DB873E1952D /* NovaApp.swift in Sources */,
+				F1CA8B158E0B4EC1C0C05862 /* RecentlyDeletedView.swift in Sources */,
+				D1F1ADBF5DC874E966E49C7B /* SettingsView.swift in Sources */,
+				E41BAF3DCBA5BE28C7509336 /* SideMenuView.swift in Sources */,
+				EA8E51CDCDAAA2714B377AEA /* TagsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C0D3D604300CF6A0009287D7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */;
+			targetProxy = C0D3D603300CF6A0009287D7 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		33779B47632DE37C421B4BBA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Nova/Nova.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Nova/Info.plist;
+				INFOPLIST_KEY_CFBundleURLTypes = "(\n  {\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes = (\n      \"com.googleusercontent.apps.262012268980-6namo25ddkj62fm44at1s2tr7mneqal1\",\n    );\n  }\n)\n";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		54E66C4DF7076B6EB1641FAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		78A834146F87CF960BAE8FE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Nova/Nova.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Nova/Info.plist;
+				INFOPLIST_KEY_CFBundleURLTypes = "(\n  {\n    CFBundleTypeRole = Editor;\n    CFBundleURLSchemes = (\n      \"com.googleusercontent.apps.262012268980-6namo25ddkj62fm44at1s2tr7mneqal1\",\n    );\n  }\n)\n";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "-ObjC";
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0D3D608300CF6A0009287D7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = NovaWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovaWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NovaWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova.NovaWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0D3D609300CF6A0009287D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = NovaWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovaWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NovaWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova.NovaWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D61E871FD3E8D88082AB9F41 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		B0AB78949553C299C15D72F2 /* Build configuration list for PBXNativeTarget "Nova" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				78A834146F87CF960BAE8FE1 /* Debug */,
+				33779B47632DE37C421B4BBA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C0D3D607300CF6A0009287D7 /* Build configuration list for PBXNativeTarget "NovaWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0D3D608300CF6A0009287D7 /* Debug */,
+				C0D3D609300CF6A0009287D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D007772F3651288F5AF39FA5 /* Build configuration list for PBXProject "Nova" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				54E66C4DF7076B6EB1641FAD /* Debug */,
+				D61E871FD3E8D88082AB9F41 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		494DC63A732B127231499085 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.1.0;
+			};
+		};
+		A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		637AAC74CB559267BE09B1FE /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 494DC63A732B127231499085 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		B12261CCAE285434D1199B87 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 494DC63A732B127231499085 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		C0D3D60D300CFAB1009287D7 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		C0D3D60F300CFACE009287D7 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		C0D3D611300CFAD1009287D7 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		C0D3D613300CFAE0009287D7 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A749F59D51846D52236E9FD2 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F545DF30FAB818DABAFA99F1 /* Project object */;
+}
