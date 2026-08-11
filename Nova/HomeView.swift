@@ -323,26 +323,31 @@ struct HomeView: View {
                     }
                 }) {
                     Image(systemName: isCustomizeMode ? "checkmark.circle.fill" : "slider.horizontal.3")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(isCustomizeMode ? .white : .primary.opacity(0.7))
-                        .frame(width: 42, height: 42)
-                        .background(
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(isCustomizeMode ? .white : .primary)
+                        .frame(width: 36, height: 36)
+                        .background(isCustomizeMode ? Color.blue : Color.clear)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                        .overlay(
                             Circle()
-                                .fill(isCustomizeMode ? Color.blue : Color(UIColor.systemBackground))
-                                .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
                         )
                 }
 
                 // Settings
                 Button(action: { showSettingsSheet = true }) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.primary.opacity(0.7))
-                        .frame(width: 42, height: 42)
-                        .background(
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.primary)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                        .overlay(
                             Circle()
-                                .fill(Color(UIColor.systemBackground))
-                                .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
                         )
                 }
             }
@@ -576,8 +581,8 @@ struct HomeView: View {
         Task {
             do {
                 // 1. Load Bank Data
-                let banksSnap = try await db.collection("users").document(user.uid).collection("banks").getDocuments()
-                let bankTransSnap = try await db.collection("users").document(user.uid).collection("bankTransactions").getDocuments()
+                let banksSnap = try await db.collection("users").document(user.uid).collection("banks").getDocumentsSmart()
+                let bankTransSnap = try await db.collection("users").document(user.uid).collection("bankTransactions").getDocumentsSmart()
                 
                 var allBanks: [WidgetBank] = []
                 for doc in banksSnap.documents {
@@ -636,10 +641,16 @@ struct HomeView: View {
                 self.banks = Array(sortedBanks.prefix(7))
                 self.totalBankPortfolio = visibleBanks.reduce(0.0) { $0 + $1.balance }
                 
+                // Keep pre-calculated summary document in sync (Auto-migration & Cold Launch fallback)
+                try? await AccountSummaryHelper.shared.summaryDocRef(uid: user.uid).setData([
+                    "totalBankBalance": self.totalBankPortfolio,
+                    "lastUpdated": FieldValue.serverTimestamp()
+                ], merge: true)
+                
                 // 2. Load Finance & Stock Transactions
-                let instsSnap = try await db.collection("users").document(user.uid).collection("institutions").getDocuments()
-                let stocksSnap = try await db.collection("users").document(user.uid).collection("stocks").getDocuments()
-                let financeTransSnap = try await db.collection("users").document(user.uid).collection("financeTransactions").getDocuments()
+                let instsSnap = try await db.collection("users").document(user.uid).collection("institutions").getDocumentsSmart()
+                let stocksSnap = try await db.collection("users").document(user.uid).collection("stocks").getDocumentsSmart()
+                let financeTransSnap = try await db.collection("users").document(user.uid).collection("financeTransactions").getDocumentsSmart()
                 
                 // Parse Stocks Info
                 var stocksDict: [String: (name: String, currentPrice: Double, dailyChange: Double, previousPrice: Double)] = [:]
@@ -722,6 +733,11 @@ struct HomeView: View {
                     if dateCmp != .orderedSame {
                         return dateCmp == .orderedAscending
                     }
+                    let isAlis0 = $0.type.uppercased().hasPrefix("AL")
+                    let isAlis1 = $1.type.uppercased().hasPrefix("AL")
+                    if isAlis0 != isAlis1 {
+                        return isAlis0
+                    }
                     return $0.createdAtSeconds < $1.createdAtSeconds
                 }
                 
@@ -733,7 +749,7 @@ struct HomeView: View {
                     let keyInst = "\(r.stockId)_\(r.institutionId)"
                     let keyStock = r.stockId
                     
-                    if r.type == "ALIŞ" {
+                    if r.type.hasPrefix("AL") {
                         if instLots[keyInst] == nil { instLots[keyInst] = [] }
                         instLots[keyInst]?.append(FinanceLot(remaining: r.quantity, price: r.price, taxRate: r.taxRate, date: r.date))
                         
@@ -903,12 +919,12 @@ struct HomeView: View {
                 self.totalStockTax = stockList.reduce(0.0) { $0 + $1.taxValue }
                 
                 // 3. Load Word logs for Dictionary Streak count
-                let statsSnap = try await db.collection("users").document(user.uid).collection("daily_stats").getDocuments()
+                let statsSnap = try await db.collection("users").document(user.uid).collection("daily_stats").getDocumentsSmart()
                 var dailyStatsDict: [String: Int] = [:]
                 for doc in statsSnap.documents {
                     let data = doc.data()
                     let dateStr = doc.documentID
-                    if let count = data["correctCount"] as? Int {
+                    if let count = (data["correctCount"] as? NSNumber)?.intValue ?? (data["correctCount"] as? Int) {
                         dailyStatsDict[dateStr] = count
                     }
                 }
@@ -963,13 +979,45 @@ struct HomeView: View {
                 self.isGoalReached = isGoalReachedFlag
                 self.monthCalendar = monthCal
                 
+                // Fetch user's words to compute accurate quick test question counts
+                var dictWordsList: [(id: String, starred: Bool, lang: String, stage: Int)] = []
+                if let wordsSnap = try? await db.collection("users").document(user.uid).collection("words").getDocumentsSmart() {
+                    for doc in wordsSnap.documents {
+                        let d = doc.data()
+                        let wid = doc.documentID
+                        let st = d["isStarred"] as? Bool ?? false
+                        let lg = d["language"] as? String ?? d["lang"] as? String ?? "english"
+                        let sg = d["learningStage"] as? Int ?? 0
+                        dictWordsList.append((id: wid, starred: st, lang: lg, stage: sg))
+                    }
+                }
+                
+                func countMatchingWords(onlyStarred: Bool, excludeStarred: Bool, lang: String, sYeni: Bool, sOgreniyor: Bool, sOgrendi: Bool) -> Int {
+                    var pool = dictWordsList
+                    if onlyStarred { pool = pool.filter { $0.starred } }
+                    if excludeStarred { pool = pool.filter { !$0.starred } }
+                    if lang != "all" && !lang.isEmpty { pool = pool.filter { $0.lang.lowercased() == lang.lowercased() } }
+                    let statusFilters: [String] = [
+                        sYeni ? "Yeni" : "",
+                        sOgreniyor ? "Öğreniyor" : "",
+                        sOgrendi ? "Öğrendi" : ""
+                    ].filter { !$0.isEmpty }
+                    if !statusFilters.isEmpty {
+                        pool = pool.filter { w in
+                            let wordStatus = w.stage == 0 ? "Yeni" : (w.stage >= 5 ? "Öğrendi" : "Öğreniyor")
+                            return statusFilters.contains(wordStatus)
+                        }
+                    }
+                    return pool.count
+                }
+
                 // Fetch Quick Tests for Home Page Widget
-                if let qtSnap = try? await db.collection("users").document(user.uid).collection("quick_tests").getDocuments() {
+                if let qtSnap = try? await db.collection("users").document(user.uid).collection("quick_tests").getDocumentsSmart() {
                     var fetchedQT: [QuickTestTemplate] = []
                     for doc in qtSnap.documents {
                         let d = doc.data()
                         let name = d["name"] as? String ?? ""
-                        let qCount = d["questionCount"] as? Int ?? (d["questionCount"] as? Double != nil ? Int(d["questionCount"] as! Double) : 15)
+                        let rawQCount = d["questionCount"] as? Int ?? (d["questionCount"] as? Double != nil ? Int(d["questionCount"] as! Double) : 15)
                         let qFormat = d["questionFormat"] as? String ?? "mixed"
                         let lang = d["selectedLanguage"] as? String ?? "all"
                         let mcq = d["typeMCQ"] as? Bool ?? true
@@ -989,11 +1037,15 @@ struct HomeView: View {
                         let singleM = d["modeSingleMeaning"] as? Bool ?? false
                         let comboS = d["modeComboStreak"] as? Bool ?? false
                         let progH = d["modeProgressiveHint"] as? Bool ?? false
+                        let createdAtVal = parseFirestoreDate(d["createdAt"])
+                        
+                        let matchingCount = countMatchingWords(onlyStarred: oStarred, excludeStarred: eStarred, lang: lang, sYeni: sYeni, sOgreniyor: sOgreniyor, sOgrendi: sOgrendi)
+                        let actualQCount = matchingCount > 0 ? min(rawQCount, matchingCount) : rawQCount
                         
                         fetchedQT.append(QuickTestTemplate(
                             id: doc.documentID,
                             name: name.isEmpty ? "Hızlı Test" : name,
-                            questionCount: qCount,
+                            questionCount: actualQCount,
                             questionFormat: qFormat,
                             selectedLanguage: lang,
                             typeMCQ: mcq,
@@ -1012,16 +1064,18 @@ struct HomeView: View {
                             modeMissingLetters: missingL,
                             modeSingleMeaning: singleM,
                             modeComboStreak: comboS,
-                            modeProgressiveHint: progH
+                            modeProgressiveHint: progH,
+                            createdAt: createdAtVal
                         ))
                     }
+                    fetchedQT.sort(by: { $0.createdAt > $1.createdAt })
                     self.quickTests = fetchedQT
                 }
                 
                 // 4. Load Notes View Data
                 let notesSnap = try await db.collection("users").document(user.uid).collection("notes")
                     .whereField("date", isGreaterThanOrEqualTo: "2000-01-01")
-                    .getDocuments()
+                    .getDocumentsSmart()
                 
                 var allNotes: [WidgetNote] = []
                 for doc in notesSnap.documents {
@@ -1557,6 +1611,8 @@ struct StreakWidgetView: View {
                         Text("\(streakCount)")
                             .font(.system(size: 38, weight: .bold, design: .rounded))
                             .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
                     
                     VStack(alignment: .leading, spacing: 3) {
@@ -1653,42 +1709,74 @@ struct StreakWidgetView: View {
                 ] : quickTests
                 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         ForEach(listToDisplay) { test in
                             Button(action: {
                                 NotificationCenter.default.post(name: Notification.Name("SwitchTab"), object: MenuOption.dictionary)
                                 NotificationCenter.default.post(name: Notification.Name("SelectDictionarySection"), object: "pratik")
                                 NotificationCenter.default.post(name: Notification.Name("StartQuickTest"), object: test.id)
                             }) {
-                                HStack(spacing: 8) {
-                                    Image(systemName: test.id.contains("yildiz") ? "star.fill" : "lightning.fill")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundColor(test.id.contains("yildiz") ? .yellow : .orange)
+                                let isStarred = test.onlyStarred || test.id.contains("yildiz")
+                                let isLearning = test.id.contains("ogrendik")
+                                let accentColor: Color = isStarred ? .orange : (isLearning ? .green : .blue)
+                                let iconName: String = isStarred ? "star.fill" : (isLearning ? "checkmark.seal.fill" : "lightning.fill")
+                                
+                                let formatTypes = [
+                                    test.typeMCQ ? "Çoktan Seçmeli" : "",
+                                    test.typeTF ? "D/Y" : "",
+                                    test.typeFlashcard ? "Kartlar" : "",
+                                    test.typeWritten ? "Yazma" : ""
+                                ].filter { !$0.isEmpty }
+                                
+                                HStack(spacing: 10) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(accentColor.opacity(0.12))
+                                            .frame(width: 32, height: 32)
+                                        Image(systemName: iconName)
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(accentColor)
+                                    }
                                     
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    VStack(alignment: .leading, spacing: 3) {
                                         Text(test.name)
-                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .font(.system(size: 13, weight: .bold, design: .rounded))
                                             .foregroundColor(.primary)
-                                        Text("\(test.questionCount) Soru")
-                                            .font(.system(size: 10, design: .rounded))
-                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                        
+                                        HStack(spacing: 6) {
+                                            Text("\(test.questionCount) Soru")
+                                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                                .foregroundColor(accentColor)
+                                            
+                                            if !formatTypes.isEmpty {
+                                                Text("• " + formatTypes.prefix(2).joined(separator: ", "))
+                                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                        }
                                     }
                                     
                                     Image(systemName: "play.circle.fill")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.blue)
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .foregroundColor(accentColor)
+                                        .padding(.leading, 4)
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Color.blue.opacity(0.06))
-                                .cornerRadius(12)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(Color.white)
+                                .cornerRadius(14)
+                                .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.blue.opacity(0.12), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(accentColor.opacity(0.18), lineWidth: 1)
                                 )
                             }
                         }
                     }
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -1898,36 +1986,49 @@ fileprivate func getInstitutionLogo(for instName: String) -> String? {
 
 // MARK: - Amount and String Parsing Helpers
 
-fileprivate func parseAmount(_ val: Any?) -> Double {
+func parseAmount(_ val: Any?) -> Double {
+    guard let val = val else { return 0.0 }
     if let doubleVal = val as? Double {
         return doubleVal
+    }
+    if let numVal = val as? NSNumber {
+        return numVal.doubleValue
     }
     if let intVal = val as? Int {
         return Double(intVal)
     }
     if let strVal = val as? String {
         let trimmed = strVal.trimmingCharacters(in: .whitespacesAndNewlines)
-        var cleanStr = trimmed
-        if trimmed.contains(",") {
-            cleanStr = trimmed.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
-        }
+        if trimmed.isEmpty { return 0.0 }
         
-        var parsedStr = ""
-        var hasDecimalPoint = false
-        var isFirstChar = true
-        for char in cleanStr {
-            if char == "-" && isFirstChar {
-                parsedStr.append(char)
-            } else if char == "." && !hasDecimalPoint {
-                parsedStr.append(char)
-                hasDecimalPoint = true
-            } else if char.isNumber {
-                parsedStr.append(char)
+        let isNegative = trimmed.hasPrefix("-")
+        var clean = trimmed.replacingOccurrences(of: "-", with: "")
+                           .replacingOccurrences(of: "+", with: "")
+                           .replacingOccurrences(of: "₺", with: "")
+                           .replacingOccurrences(of: "$", with: "")
+                           .replacingOccurrences(of: "€", with: "")
+                           .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if clean.contains(",") && clean.contains(".") {
+            if clean.lastIndex(of: ",")! > clean.lastIndex(of: ".")! {
+                clean = clean.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            } else {
+                clean = clean.replacingOccurrences(of: ",", with: "")
             }
-            isFirstChar = false
+        } else if clean.contains(",") {
+            clean = clean.replacingOccurrences(of: ",", with: ".")
+        } else if clean.contains(".") {
+            let components = clean.components(separatedBy: ".")
+            if components.count > 1 {
+                let lastComp = components.last ?? ""
+                if lastComp.count == 3 {
+                    clean = clean.replacingOccurrences(of: ".", with: "")
+                }
+            }
         }
         
-        return Double(parsedStr) ?? 0.0
+        let res = Double(clean) ?? 0.0
+        return isNegative ? -res : res
     }
     return 0.0
 }

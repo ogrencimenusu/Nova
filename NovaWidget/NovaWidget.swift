@@ -524,10 +524,8 @@ struct StreakProvider: TimelineProvider {
             for doc in docs {
                 let data = doc.data()
                 let dateStr = doc.documentID
-                if let count = data["correctCount"] as? Int {
+                if let count = (data["correctCount"] as? NSNumber)?.intValue ?? (data["correctCount"] as? Int) {
                     statsDict[dateStr] = count
-                } else if let num = data as? [String: Any], let c = num["correctCount"] as? Int {
-                    statsDict[dateStr] = c
                 }
             }
         }
@@ -601,30 +599,140 @@ struct StreakWidgetEntryView : View {
     let dayInitials = ["P", "S", "Ç", "P", "C", "C", "P"]
     
     @ViewBuilder
-    var leftSideView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SÖZLÜK")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(.gray)
+    var smallStreakWidgetView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row with optional completion badge
+            if entry.isGoalReached {
+                HStack {
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Tamamlandı")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.green.opacity(0.14))
+                    .cornerRadius(10)
+                }
+                .padding(.bottom, 2)
+            }
             
-            HStack(spacing: 4) {
-                Image(systemName: "flame.fill")
-                    .foregroundColor(entry.isGoalReached ? .orange : .gray.opacity(0.3))
-                    .font(.system(size: family == .systemSmall ? 36 : 24))
+            Spacer(minLength: 0)
+            
+            // Hero Center Section (Edge-to-Edge Hero)
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(entry.isGoalReached ? Color.orange.opacity(0.22) : Color.orange.opacity(0.12))
+                        .frame(width: 52, height: 52)
+                    
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(entry.isGoalReached ? .orange : .gray.opacity(0.5))
+                }
                 
-                Text("\(entry.streakCount)")
-                    .font(.system(size: family == .systemSmall ? 48 : 32, weight: .bold))
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: -2) {
+                    Text("\(entry.streakCount)")
+                        .font(.system(size: 46, weight: .heavy, design: .rounded))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    
+                    Text("GÜN SERİ")
+                        .font(.system(size: 12, weight: .black, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .tracking(0.6)
+                }
+            }
+            .padding(.vertical, 2)
+            
+            Spacer(minLength: 0)
+            
+            // Bottom Progress Bar Section (Edge-to-Edge)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(entry.isGoalReached ? "Hedef Tamam!" : "Bugünkü Hedef")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(entry.isGoalReached ? .green : .secondary)
+                    
+                    Spacer()
+                    
+                    Text("\(entry.todayProgress)/100")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundColor(entry.isGoalReached ? .green : .primary)
+                }
+                
+                GeometryReader { pGeo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.gray.opacity(0.18))
+                            .frame(height: 10)
+                        
+                        let progressRatio = min(1.0, max(0.0, Double(entry.todayProgress) / 100.0))
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: entry.isGoalReached ? [.green, Color(red: 0.2, green: 0.8, blue: 0.4)] : [.orange, .yellow],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(10, pGeo.size.width * CGFloat(progressRatio)), height: 10)
+                    }
+                }
+                .frame(height: 10)
+            }
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    
+    @ViewBuilder
+    var leftSideView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SÖZLÜK SERİSİ")
+                .font(.system(size: 10, weight: .black, design: .rounded))
+                .foregroundColor(entry.isGoalReached ? .orange : .gray)
+            
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle()
+                        .fill(entry.isGoalReached ? Color.orange.opacity(0.18) : Color.gray.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                    
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(entry.isGoalReached ? .orange : .gray.opacity(0.4))
+                }
+                
+                VStack(alignment: .leading, spacing: -2) {
+                    Text("\(entry.streakCount)")
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    
+                    Text("GÜN SERİ")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text("Bugün")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundColor(.secondary)
                 
                 Text("\(entry.todayProgress) / 100")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 12, weight: .heavy, design: .rounded))
                     .foregroundColor(entry.isGoalReached ? .green : .primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             Spacer(minLength: 0)
         }
@@ -635,8 +743,7 @@ struct StreakWidgetEntryView : View {
             Text("Lütfen giriş yapın.")
         } else {
             if family == .systemSmall {
-                leftSideView
-                    .padding()
+                smallStreakWidgetView
             } else {
                 GeometryReader { geo in
                     HStack(spacing: 0) {
@@ -716,20 +823,40 @@ struct StreakWidget: Widget {
     let kind: String = "StreakWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: StreakProvider()) { entry in
+        let config = StaticConfiguration(kind: kind, provider: StreakProvider()) { entry in
             if #available(iOS 17.0, *) {
                 StreakWidgetEntryView(entry: entry)
-                    .containerBackground(Color(UIColor.systemBackground), for: .widget)
+                    .containerBackground(for: .widget) {
+                        ZStack {
+                            Rectangle().fill(.ultraThinMaterial)
+                            if entry.isGoalReached {
+                                Color.orange.opacity(0.12)
+                            }
+                        }
+                    }
                     .widgetURL(URL(string: "nova://dictionary"))
             } else {
                 StreakWidgetEntryView(entry: entry)
-                    .background(Color(UIColor.systemBackground))
+                    .background(
+                        ZStack {
+                            Rectangle().fill(.ultraThinMaterial)
+                            if entry.isGoalReached {
+                                Color.orange.opacity(0.12)
+                            }
+                        }
+                    )
                     .widgetURL(URL(string: "nova://dictionary"))
             }
         }
         .configurationDisplayName("Sözlük Streak")
         .description("Sözlükteki günlük çalışma serinizi takip edin.")
         .supportedFamilies([.systemSmall, .systemMedium])
+        
+        if #available(iOS 17.0, *) {
+            return config.contentMarginsDisabled()
+        } else {
+            return config
+        }
     }
 }
 
@@ -783,8 +910,8 @@ struct BankProvider: AppIntentTimelineProvider {
         
         let db = Firestore.firestore()
         do {
-            let banksSnap = try await db.collection("users").document(user.uid).collection("banks").getDocuments()
-            let transSnap = try await db.collection("users").document(user.uid).collection("bankTransactions").getDocuments()
+            let banksSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("banks"))
+            let transSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("bankTransactions"))
             
             var allBanksForTotal: [WidgetBank] = []
             for doc in banksSnap.documents {
@@ -854,41 +981,57 @@ struct BankProvider: AppIntentTimelineProvider {
     }
 }
 
+fileprivate func getDocumentsServerFirst(_ query: Query) async throws -> QuerySnapshot {
+    do {
+        return try await query.getDocuments(source: .server)
+    } catch {
+        return try await query.getDocuments(source: .cache)
+    }
+}
+
 fileprivate func parseAmount(_ val: Any?) -> Double {
+    guard let val = val else { return 0.0 }
     if let doubleVal = val as? Double {
         return doubleVal
+    }
+    if let numVal = val as? NSNumber {
+        return numVal.doubleValue
     }
     if let intVal = val as? Int {
         return Double(intVal)
     }
     if let strVal = val as? String {
         let trimmed = strVal.trimmingCharacters(in: .whitespacesAndNewlines)
-        var cleanStr = trimmed
-        if trimmed.contains(",") {
-            cleanStr = trimmed.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
-        }
+        if trimmed.isEmpty { return 0.0 }
         
-        var parsedStr = ""
-        var hasDecimalPoint = false
-        var isFirstChar = true
+        let isNegative = trimmed.hasPrefix("-")
+        var clean = trimmed.replacingOccurrences(of: "-", with: "")
+                           .replacingOccurrences(of: "+", with: "")
+                           .replacingOccurrences(of: "₺", with: "")
+                           .replacingOccurrences(of: "$", with: "")
+                           .replacingOccurrences(of: "€", with: "")
+                           .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        for char in cleanStr {
-            if char == "-" && isFirstChar {
-                parsedStr.append(char)
-            } else if char == "+" && isFirstChar {
-                // Ignore positive sign
-            } else if char.isNumber {
-                parsedStr.append(char)
-            } else if char == "." && !hasDecimalPoint {
-                parsedStr.append(char)
-                hasDecimalPoint = true
+        if clean.contains(",") && clean.contains(".") {
+            if clean.lastIndex(of: ",")! > clean.lastIndex(of: ".")! {
+                clean = clean.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
             } else {
-                break
+                clean = clean.replacingOccurrences(of: ",", with: "")
             }
-            isFirstChar = false
+        } else if clean.contains(",") {
+            clean = clean.replacingOccurrences(of: ",", with: ".")
+        } else if clean.contains(".") {
+            let components = clean.components(separatedBy: ".")
+            if components.count > 1 {
+                let lastComp = components.last ?? ""
+                if lastComp.count == 3 {
+                    clean = clean.replacingOccurrences(of: ".", with: "")
+                }
+            }
         }
         
-        return Double(parsedStr) ?? 0.0
+        let res = Double(clean) ?? 0.0
+        return isNegative ? -res : res
     }
     return 0.0
 }
@@ -1221,9 +1364,9 @@ struct FinanceProvider: AppIntentTimelineProvider {
         
         let db = Firestore.firestore()
         do {
-            let instsSnap = try await db.collection("users").document(user.uid).collection("institutions").getDocuments()
-            let stocksSnap = try await db.collection("users").document(user.uid).collection("stocks").getDocuments()
-            let transSnap = try await db.collection("users").document(user.uid).collection("financeTransactions").getDocuments()
+            let instsSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("institutions"))
+            let stocksSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("stocks"))
+            let transSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("financeTransactions"))
             
             var stocksDict: [String: (currentPrice: Double, dailyChange: Double)] = [:]
             for doc in stocksSnap.documents {
@@ -1307,7 +1450,7 @@ struct FinanceProvider: AppIntentTimelineProvider {
             
             for r in records {
                 let key = "\(r.stockId)_\(r.institutionId)"
-                if r.type == "ALIŞ" {
+                if r.type.hasPrefix("AL") {
                     if buyLots[key] == nil {
                         buyLots[key] = []
                     }
@@ -1850,8 +1993,8 @@ struct StockProvider: AppIntentTimelineProvider {
         
         let db = Firestore.firestore()
         do {
-            let stocksSnap = try await db.collection("users").document(user.uid).collection("stocks").getDocuments()
-            let transSnap = try await db.collection("users").document(user.uid).collection("financeTransactions").getDocuments()
+            let stocksSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("stocks"))
+            let transSnap = try await getDocumentsServerFirst(db.collection("users").document(user.uid).collection("financeTransactions"))
             
             var stocksDict: [String: (name: String, currentPrice: Double, dailyChange: Double)] = [:]
             for doc in stocksSnap.documents {
@@ -1913,7 +2056,7 @@ struct StockProvider: AppIntentTimelineProvider {
             
             for r in records {
                 let key = r.stockId
-                if r.type == "ALIŞ" {
+                if r.type.hasPrefix("AL") {
                     if buyLots[key] == nil {
                         buyLots[key] = []
                     }
@@ -2313,3 +2456,19 @@ struct StockWidget: Widget {
         WidgetStock(id: "4", name: "SASA", netValue: 18999.94, dailyGain: -626.62, taxValue: 0.0, dailyGainPercent: -3.19, totalGain: -200.0, totalGainPercent: -1.04)
     ], totalPortfolio: 291670.59, totalTax: 348.40, isLoggedIn: true, showTax: true)
 }
+
+// MARK: - Firestore Cache Extensions for Widget
+extension Query {
+    func getDocumentsSmart() async throws -> QuerySnapshot {
+        do {
+            let cacheSnap = try await self.getDocuments(source: .cache)
+            if !cacheSnap.documents.isEmpty {
+                return cacheSnap
+            }
+        } catch {
+            // Fallback to server if cache miss
+        }
+        return try await self.getDocuments(source: .default)
+    }
+}
+

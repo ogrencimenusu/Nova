@@ -4,6 +4,15 @@ import AVFoundation
 import FirebaseAuth
 import FirebaseFirestore
 
+fileprivate func parseFamilyItem(_ item: String) -> (term: String, desc: String) {
+    if let openIdx = item.range(of: "(") {
+        let term = String(item[..<openIdx.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let desc = String(item[openIdx.lowerBound...]).trimmingCharacters(in: .whitespaces)
+        return (term, desc)
+    }
+    return (item, "")
+}
+
 // MARK: - Text To Speech Manager
 
 class TextToSpeechManager: NSObject, AVSpeechSynthesizerDelegate {
@@ -130,6 +139,8 @@ struct DictionaryView: View {
     @State private var filterSortRules: [SortRule] = [] // Multi-level sorting rules
     @State private var filterStatus: String = "all" // "all", "yeni", "ogreniyor", "ogrendi"
     @State private var filterListId: String? = nil // selected custom list ID (nil = all)
+    @State private var isSyncingFromRemote: Bool = false
+    @State private var settingsListener: ListenerRegistration? = nil
     
     // Sticky Notes Navigation bar Header states
     @State private var stickySearchText: String = ""
@@ -468,6 +479,7 @@ struct DictionaryView: View {
                             PratikContentView(
                                 allWords: $allWords,
                                 customLists: customLists,
+                                stickyNotes: stickyNotes,
                                 viewMode: $practiceViewMode,
                                 onSelectWord: { word in
                                     selectedWordForDetail = word
@@ -522,12 +534,18 @@ struct DictionaryView: View {
         .onAppear {
             loadFilterSettings()
             loadDictionaryData()
+            setupSettingsListener()
+        }
+        .onDisappear {
+            settingsListener?.remove()
+            settingsListener = nil
         }
         .onChange(of: filterLanguage) { _ in saveFilterSettings() }
         .onChange(of: filterStarredOnly) { _ in saveFilterSettings() }
         .onChange(of: filterStatus) { _ in saveFilterSettings() }
         .onChange(of: filterListId) { _ in saveFilterSettings() }
         .onChange(of: filterSortRules) { _ in saveFilterSettings() }
+        .onChange(of: searchText) { _ in saveFilterSettings() }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SelectDictionarySection"))) { notification in
             if let section = notification.object as? String {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -569,6 +587,76 @@ struct DictionaryView: View {
         }
     }
     
+    private func setupSettingsListener() {
+        guard let user = Auth.auth().currentUser else { return }
+        let db = Firestore.firestore()
+        let ref = db.collection("users").document(user.uid).collection("settings").document("app")
+        
+        settingsListener?.remove()
+        settingsListener = ref.addSnapshotListener { snapshot, error in
+            guard let data = snapshot?.data(), snapshot?.exists == true else { return }
+            
+            DispatchQueue.main.async {
+                self.isSyncingFromRemote = true
+                
+                if let lang = data["filterLanguage"] as? String ?? data["activeLanguageFilter"] as? String {
+                    let normLang = (lang.isEmpty || lang == "all") ? "all" : lang
+                    if self.filterLanguage != normLang {
+                        self.filterLanguage = normLang
+                    }
+                }
+                
+                if let starred = data["filterStarredOnly"] as? Bool ?? data["showOnlyStarred"] as? Bool {
+                    if self.filterStarredOnly != starred {
+                        self.filterStarredOnly = starred
+                    }
+                }
+                
+                if let status = data["filterStatus"] as? String ?? data["quickStatusFilter"] as? String {
+                    let normStatus: String
+                    let lower = status.lowercased()
+                    if lower == "yeni" { normStatus = "yeni" }
+                    else if lower == "ogreniyor" || lower == "öğreniyor" { normStatus = "ogreniyor" }
+                    else if lower == "ogrendi" || lower == "öğrendi" { normStatus = "ogrendi" }
+                    else { normStatus = "all" }
+                    
+                    if self.filterStatus != normStatus {
+                        self.filterStatus = normStatus
+                    }
+                }
+                
+                if let listId = data["filterListId"] as? String {
+                    let normListId = listId.isEmpty ? nil : listId
+                    if self.filterListId != normListId {
+                        self.filterListId = normListId
+                    }
+                }
+                
+                if let search = data["searchQuery"] as? String {
+                    if self.searchText != search {
+                        self.searchText = search
+                    }
+                }
+                
+                if let rawSortRules = data["sortRules"] as? [[String: Any]] {
+                    var parsedRules: [SortRule] = []
+                    for item in rawSortRules {
+                        if let field = item["field"] as? String, let dir = item["direction"] as? String {
+                            parsedRules.append(SortRule(field: field, direction: dir))
+                        }
+                    }
+                    if self.filterSortRules.map({ $0.field + $0.direction }) != parsedRules.map({ $0.field + $0.direction }) {
+                        self.filterSortRules = parsedRules
+                    }
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.isSyncingFromRemote = false
+                }
+            }
+        }
+    }
+    
     private func loadFilterSettings() {
         let defaults = UserDefaults.standard
         if let lang = defaults.string(forKey: "dictionary_saved_filterLanguage") {
@@ -583,6 +671,9 @@ struct DictionaryView: View {
         if let listId = defaults.string(forKey: "dictionary_saved_filterListId") {
             self.filterListId = listId.isEmpty ? nil : listId
         }
+        if let search = defaults.string(forKey: "dictionary_saved_searchQuery") {
+            self.searchText = search
+        }
         if let sortData = defaults.data(forKey: "dictionary_saved_filterSortRules"),
            let rules = try? JSONDecoder().decode([SortRule].self, from: sortData) {
             self.filterSortRules = rules
@@ -595,9 +686,41 @@ struct DictionaryView: View {
         defaults.set(filterStarredOnly, forKey: "dictionary_saved_filterStarredOnly")
         defaults.set(filterStatus, forKey: "dictionary_saved_filterStatus")
         defaults.set(filterListId ?? "", forKey: "dictionary_saved_filterListId")
+        defaults.set(searchText, forKey: "dictionary_saved_searchQuery")
         if let encoded = try? JSONEncoder().encode(filterSortRules) {
             defaults.set(encoded, forKey: "dictionary_saved_filterSortRules")
         }
+        
+        guard !isSyncingFromRemote, let user = Auth.auth().currentUser else { return }
+        let db = Firestore.firestore()
+        let ref = db.collection("users").document(user.uid).collection("settings").document("app")
+        
+        var sortRulesArray: [[String: String]] = []
+        for r in filterSortRules {
+            sortRulesArray.append(["field": r.field, "direction": r.direction])
+        }
+        
+        let webStatus: String
+        switch filterStatus {
+        case "yeni": webStatus = "Yeni"
+        case "ogreniyor": webStatus = "Öğreniyor"
+        case "ogrendi": webStatus = "Öğrendi"
+        default: webStatus = ""
+        }
+        
+        let payload: [String: Any] = [
+            "filterLanguage": filterLanguage,
+            "activeLanguageFilter": filterLanguage == "all" ? "" : filterLanguage,
+            "filterStarredOnly": filterStarredOnly,
+            "showOnlyStarred": filterStarredOnly,
+            "filterStatus": filterStatus,
+            "quickStatusFilter": webStatus,
+            "filterListId": filterListId ?? "",
+            "searchQuery": searchText,
+            "sortRules": sortRulesArray
+        ]
+        
+        ref.setData(payload, merge: true)
     }
     
     private var hasActiveFilters: Bool {
@@ -711,7 +834,12 @@ struct DictionaryView: View {
         
         // 7. Multi-level sorting application
         if filterSortRules.isEmpty {
-            result.sort { $0.createdAt > $1.createdAt }
+            result.sort { a, b in
+                if a.createdAt != b.createdAt {
+                    return a.createdAt > b.createdAt
+                }
+                return a.term.localizedCompare(b.term) == .orderedAscending
+            }
         } else {
             result.sort { a, b in
                 for rule in filterSortRules {
@@ -735,6 +863,10 @@ struct DictionaryView: View {
                     default:
                         break
                     }
+                }
+                let cmp = a.term.localizedCompare(b.term)
+                if cmp != .orderedSame {
+                    return cmp == .orderedAscending
                 }
                 return a.createdAt > b.createdAt
             }
@@ -765,7 +897,7 @@ struct DictionaryView: View {
                 let _ = df.dateFormat = "yyyy-MM-dd"
                 let todayStr = df.string(from: Date())
                 let todayData = dailyStatsMap[todayStr] as? [String: Any] ?? [:]
-                let todaySolvedCount = todayData["correctCount"] as? Int ?? 0
+                let todaySolvedCount = (todayData["correctCount"] as? NSNumber)?.intValue ?? (todayData["correctCount"] as? Int ?? 0)
                 let isGoalDone = todaySolvedCount >= 100
                 
                 Button(action: {
@@ -1170,7 +1302,7 @@ struct DictionaryView: View {
         Task {
             do {
                 // 1. Fetch Custom Lists from user's subcollection
-                let listsSnap = try await db.collection("users").document(user.uid).collection("customLists").getDocuments()
+                let listsSnap = try await db.collection("users").document(user.uid).collection("customLists").getDocumentsSmart()
                 var fetchedCustomLists: [CustomListModel] = []
                 for doc in listsSnap.documents {
                     let data = doc.data()
@@ -1184,7 +1316,7 @@ struct DictionaryView: View {
                 self.customLists = fetchedCustomLists
                 
                 // 2. Fetch Sticky Notes from user's subcollection
-                let notesSnap = try await db.collection("users").document(user.uid).collection("stickyNotes").getDocuments()
+                let notesSnap = try await db.collection("users").document(user.uid).collection("stickyNotes").getDocumentsSmart()
                 var fetchedNotes: [StickyNoteModel] = []
                 for doc in notesSnap.documents {
                     let data = doc.data()
@@ -1200,7 +1332,7 @@ struct DictionaryView: View {
                 self.stickyNotes = fetchedNotes.sorted(by: { $0.createdAt > $1.createdAt })
                 
                 // 3. Fetch Words
-                let wordsSnap = try await db.collection("users").document(user.uid).collection("words").getDocuments()
+                let wordsSnap = try await db.collection("users").document(user.uid).collection("words").getDocumentsSmart()
                 
                 var allWordsList: [LocalWord] = []
                 for doc in wordsSnap.documents {
@@ -1267,7 +1399,12 @@ struct DictionaryView: View {
                     }
                 }
                 
-                let sorted = allWordsList.sorted { $0.createdAt > $1.createdAt }
+                let sorted = allWordsList.sorted { a, b in
+                    if a.createdAt != b.createdAt {
+                        return a.createdAt > b.createdAt
+                    }
+                    return a.term.localizedCompare(b.term) == .orderedAscending
+                }
                 self.allWords = sorted
                 self.totalWords = allWordsList.count
                 self.newWords = allWordsList.filter { $0.learningStage == 0 }.count
@@ -1276,14 +1413,14 @@ struct DictionaryView: View {
                 self.recentWords = Array(sorted.prefix(5))
                 
                 // 4. Fetch Daily Stats
-                let statsSnap = try await db.collection("users").document(user.uid).collection("daily_stats").getDocuments()
+                let statsSnap = try await db.collection("users").document(user.uid).collection("daily_stats").getDocumentsSmart()
                 var dailyStatsDict: [String: Any] = [:]
                 var correctCountsDict: [String: Int] = [:]
                 for doc in statsSnap.documents {
                     let data = doc.data()
                     let dateStr = doc.documentID
                     dailyStatsDict[dateStr] = data
-                    if let count = data["correctCount"] as? Int {
+                    if let count = (data["correctCount"] as? NSNumber)?.intValue ?? (data["correctCount"] as? Int) {
                         correctCountsDict[dateStr] = count
                     }
                 }
@@ -1475,7 +1612,7 @@ struct DailyStatsSheetView: View {
                 .padding(.top, 8)
                 
                 let statsData = dailyStatsMap[selectedDateStr] as? [String: Any] ?? [:]
-                let correctCount = statsData["correctCount"] as? Int ?? 0
+                let correctCount = (statsData["correctCount"] as? NSNumber)?.intValue ?? (statsData["correctCount"] as? Int ?? 0)
                 let wrongCount = statsData["wrongCount"] as? Int ?? 0
                 let totalCount = correctCount + wrongCount
                 let accuracy = totalCount > 0 ? Int(Double(correctCount) / Double(totalCount) * 100) : 0
@@ -1604,7 +1741,7 @@ struct DailyStatsSheetView: View {
                         if let date = dateOpt {
                             let key = dateFormatter.string(from: date)
                             let stats = dailyStatsMap[key] as? [String: Any] ?? [:]
-                            let correct = stats["correctCount"] as? Int ?? 0
+                            let correct = (stats["correctCount"] as? NSNumber)?.intValue ?? (stats["correctCount"] as? Int ?? 0)
                             let isStreak = correct >= 100
                             let dayNum = Calendar.current.component(.day, from: date)
                             
@@ -2856,7 +2993,7 @@ struct WordCardView: View {
                 .fill(Color.orange)
                 .frame(width: 10, height: 10)
                 .shadow(color: Color.orange.opacity(0.5), radius: 3, x: 0, y: 1)
-                .offset(x: -12, y: 12)
+                .offset(x: -4, y: -4)
         }
         }
         .contentShape(Rectangle())
@@ -3007,11 +3144,14 @@ struct QuestionAnswerResult {
     let correctAnswer: String
     let userAnswer: String
     let isCorrect: Bool
+    var isTypo: Bool = false
+    var isWordFamily: Bool = false
 }
 
 struct PratikContentView: View {
     @Binding var allWords: [LocalWord]
     let customLists: [CustomListModel]
+    var stickyNotes: [StickyNoteModel] = []
     @Binding var viewMode: String
     let onSelectWord: (LocalWord) -> Void
     
@@ -3079,7 +3219,10 @@ struct PratikContentView: View {
     @State private var isLoading: Bool = false
     @State private var showSaveQuickTestAlert: Bool = false
     @State private var showDeleteAllTestsAlert: Bool = false
+    @State private var showDeleteSingleTestAlert: Bool = false
+    @State private var deletingSingleTestId: String? = nil
     @State private var showTestQuestionsSheet: Bool = false
+    @State private var showUnansweredWarningAlert: Bool = false
     @State private var selectedQuickTestId: String? = nil
     @State private var newQuickTestName: String = ""
     
@@ -3087,6 +3230,7 @@ struct PratikContentView: View {
     @State private var helpShowLetterCounter: Bool = true
     @State private var helpColorOnLengthMatch: Bool = true
     @State private var helpColorOnExactMatch: Bool = true
+    @AppStorage("practice_max_allowed_typo_letters") private var maxAllowedTypoLetters: Int = 2
     
     @State private var modeFillInTheBlanks: Bool = false
     @State private var modeMissingLetters: Bool = false
@@ -3123,7 +3267,18 @@ struct PratikContentView: View {
     @State private var userAnswersMap: [Int: String] = [:]
     @State private var openCategoryKey: String? = nil
     
+    @State private var cachedAvailableWordsCount: Int = 0
+    @State private var cachedSolvedWordIds: Set<String> = []
+    
     private var solvedWordIdsFromPracticeTests: Set<String> {
+        cachedSolvedWordIds
+    }
+    
+    private var availableWordsCount: Int {
+        cachedAvailableWordsCount
+    }
+    
+    private func updateSolvedWordIds() {
         var set = Set<String>()
         for test in savedPracticeTests {
             if let array = test["solvedWordIds"] as? [String] {
@@ -3155,14 +3310,15 @@ struct PratikContentView: View {
                 }
             }
         }
-        return set
+        self.cachedSolvedWordIds = set
     }
     
-    private var availableWordsCount: Int {
+    private func recalculateAvailableWords() {
+        updateSolvedWordIds()
         var pool = allWords
         if onlyStarred { pool = pool.filter { $0.isStarred } }
         if excludeStarred { pool = pool.filter { !$0.isStarred } }
-        if excludeSolvedToday { pool = pool.filter { !solvedWordIdsFromPracticeTests.contains($0.id) } }
+        if excludeSolvedToday { pool = pool.filter { !cachedSolvedWordIds.contains($0.id) } }
         if selectedLanguage != "all" { pool = pool.filter { $0.language == selectedLanguage } }
         if !selectedListIds.isEmpty {
             let allowedIds = Set(customLists.filter { selectedListIds.contains($0.id) }.flatMap { $0.wordIds })
@@ -3180,7 +3336,7 @@ struct PratikContentView: View {
                 }
             }
         }
-        return pool.count
+        self.cachedAvailableWordsCount = pool.count
     }
     
     var uniqueLanguages: [String] {
@@ -3230,7 +3386,18 @@ struct PratikContentView: View {
             loadQuickTests()
             loadSavedPracticeTests()
             fetchTodayStats()
+            recalculateAvailableWords()
         }
+        .onChange(of: allWords.count) { _ in recalculateAvailableWords() }
+        .onChange(of: savedPracticeTests.count) { _ in recalculateAvailableWords() }
+        .onChange(of: onlyStarred) { _ in recalculateAvailableWords() }
+        .onChange(of: excludeStarred) { _ in recalculateAvailableWords() }
+        .onChange(of: excludeSolvedToday) { _ in recalculateAvailableWords() }
+        .onChange(of: selectedLanguage) { _ in recalculateAvailableWords() }
+        .onChange(of: selectedListIds) { _ in recalculateAvailableWords() }
+        .onChange(of: statusYeni) { _ in recalculateAvailableWords() }
+        .onChange(of: statusOgreniyor) { _ in recalculateAvailableWords() }
+        .onChange(of: statusOgrendi) { _ in recalculateAvailableWords() }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RunQuickTestInPratik"))) { notification in
             if let testId = notification.object as? String {
                 executeQuickTestById(testId)
@@ -3240,9 +3407,9 @@ struct PratikContentView: View {
     
     private func executeQuickTestById(_ testId: String) {
         let defaults: [QuickTestTemplate] = [
-            QuickTestTemplate(id: "default_ogrendiklerim", name: "Öğrendiklerimi Test Et", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: false, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false),
-            QuickTestTemplate(id: "default_yildizli", name: "Yıldızlı Kelimeler", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: true, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false),
-            QuickTestTemplate(id: "default_tum", name: "Tüm Kelimeler", questionCount: 20, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false)
+            QuickTestTemplate(id: "default_ogrendiklerim", name: "Öğrendiklerimi Test Et", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: false, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2),
+            QuickTestTemplate(id: "default_yildizli", name: "Yıldızlı Kelimeler", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: true, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2),
+            QuickTestTemplate(id: "default_tum", name: "Tüm Kelimeler", questionCount: 20, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2)
         ]
         
         let found = quickTests.first(where: { $0.id == testId }) ?? defaults.first(where: { $0.id == testId })
@@ -3301,6 +3468,7 @@ struct PratikContentView: View {
         defaults.set(helpShowLetterCounter, forKey: "pratik_helpShowLetterCounter")
         defaults.set(helpColorOnLengthMatch, forKey: "pratik_helpColorOnLengthMatch")
         defaults.set(helpColorOnExactMatch, forKey: "pratik_helpColorOnExactMatch")
+        defaults.set(maxAllowedTypoLetters, forKey: "pratik_maxAllowedTypoLetters")
         
         defaults.set(modeFillInTheBlanks, forKey: "pratik_modeFillInTheBlanks")
         defaults.set(modeMissingLetters, forKey: "pratik_modeMissingLetters")
@@ -3371,6 +3539,9 @@ struct PratikContentView: View {
         }
         if defaults.object(forKey: "pratik_helpColorOnExactMatch") != nil {
             helpColorOnExactMatch = defaults.bool(forKey: "pratik_helpColorOnExactMatch")
+        }
+        if defaults.object(forKey: "pratik_maxAllowedTypoLetters") != nil {
+            maxAllowedTypoLetters = defaults.integer(forKey: "pratik_maxAllowedTypoLetters")
         }
         
         if defaults.object(forKey: "pratik_modeFillInTheBlanks") != nil {
@@ -3588,6 +3759,16 @@ struct PratikContentView: View {
         } message: {
             Text("Kayıtlı ve devam eden tüm pratik testleriniz silinecek. Emin misiniz?")
         }
+        .alert("Testi Sil", isPresented: $showDeleteSingleTestAlert) {
+            Button("Evet, Sil", role: .destructive) {
+                if let id = deletingSingleTestId {
+                    deleteSinglePracticeTest(id: id)
+                }
+            }
+            Button("Vazgeç", role: .cancel) { }
+        } message: {
+            Text("Bu kayıtlı testi silmek istediğinize emin misiniz?")
+        }
         .alert("Şablonu Sil", isPresented: $showDeleteQuickTestAlert) {
             Button("Evet, Sil", role: .destructive) {
                 if let qt = deletingQuickTest {
@@ -3638,8 +3819,10 @@ struct PratikContentView: View {
                         .cornerRadius(10)
                 }
                 
-                Slider(value: $questionCount, in: 5...50, step: 5)
+                let maxSliderBound = max(2.0, Double(availableWordsCount))
+                Slider(value: $questionCount, in: 1...maxSliderBound, step: 1)
                     .tint(.blue)
+                    .disabled(availableWordsCount == 0)
             }
             
             Divider()
@@ -3786,10 +3969,55 @@ struct PratikContentView: View {
                         .foregroundColor(.primary)
                 }
                 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     toggleRow(title: "Harf Sayacı", isSelected: $helpShowLetterCounter, icon: "textformat.123", color: .blue)
                     toggleRow(title: "Uzunluk Eşleşince Yeşil Olsun", isSelected: $helpColorOnLengthMatch, icon: "checkmark.seal", color: .green)
                     toggleRow(title: "Tam Eşleşince Mavi Olsun", isSelected: $helpColorOnExactMatch, icon: "checkmark.circle.fill", color: .blue)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "character.cursor.ibeam")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 13))
+                            
+                            Text("Yazım Hatası Toleransı")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                            
+                            Text("\(maxAllowedTypoLetters) Harf")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.orange.opacity(0.12))
+                                .cornerRadius(6)
+                        }
+                        
+                        Slider(
+                            value: Binding(
+                                get: { Double(maxAllowedTypoLetters) },
+                                set: { maxAllowedTypoLetters = Int($0) }
+                            ),
+                            in: 0...5,
+                            step: 1
+                        )
+                        .accentColor(.orange)
+                        
+                        HStack {
+                            Text("0 (Tam Eşleşme)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("Maks. 5 Harf")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.03))
+                    .cornerRadius(12)
                 }
             }
             
@@ -3862,7 +4090,7 @@ struct PratikContentView: View {
                     Spacer()
                     
                     Button(action: {
-                        finishActiveTest()
+                        handleFinishTestAttempt()
                     }) {
                         Text("Testi Bitir")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -3883,6 +4111,7 @@ struct PratikContentView: View {
                     ScrollView(showsIndicators: true) {
                         VStack(spacing: 20) {
                             ForEach(Array(activeQuestions.enumerated()), id: \.offset) { idx, q in
+                                let hasQuestionStickyNote = stickyNotes.contains(where: { $0.wordId == q.targetWord.id || (!$0.wordTerm.isEmpty && $0.wordTerm.lowercased() == q.targetWord.term.lowercased()) })
                                 VStack(alignment: .leading, spacing: 14) {
                                     // Question Header: Index Badge + Format + Star + Hint + Detay + Speaker
                                     HStack {
@@ -4057,7 +4286,7 @@ struct PratikContentView: View {
                                             .background(Color.black.opacity(0.04))
                                             .cornerRadius(12)
                                             .textInputAutocapitalization(.never)
-                                            .autocorrectionDisabled(true)
+                                            .autocorrectionDisabled(false)
                                             .submitLabel(idx + 1 < activeQuestions.count ? .next : .done)
                                             .focused($focusedQuestionIdx, equals: idx)
                                             .onSubmit {
@@ -4066,22 +4295,27 @@ struct PratikContentView: View {
                                                     withAnimation(.easeInOut(duration: 0.3)) {
                                                         scrollProxy.scrollTo(idx + 1, anchor: .top)
                                                     }
+                                                } else {
+                                                    focusedQuestionIdx = nil
                                                 }
                                             }
                                             
                                             // Yardımcı Araçlar: Harf Sayacı
                                             if helpShowLetterCounter {
-                                                let typed = userAnswersMap[idx] ?? ""
-                                                let target = q.correctAnswer
+                                                let typed = (userAnswersMap[idx] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                                let target = q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
                                                 let isLengthMatch = typed.count == target.count
                                                 let isExactMatch = typed.lowercased() == target.lowercased()
                                                 
-                                                let counterColor: Color = isExactMatch && helpColorOnExactMatch ? .blue : (isLengthMatch && helpColorOnLengthMatch ? .green : .secondary)
+                                                let familyTerms = (q.targetWord.wordFamily ?? []).map { parseFamilyItem($0).term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                                                let isFamilyMatch = !isExactMatch && !typed.isEmpty && familyTerms.contains(typed.lowercased())
+                                                
+                                                let counterColor: Color = isFamilyMatch && helpColorOnExactMatch ? .purple : (isExactMatch && helpColorOnExactMatch ? .blue : (isLengthMatch && helpColorOnLengthMatch ? .green : .secondary))
                                                 
                                                 HStack {
                                                     Spacer()
                                                     Text("\(typed.count) / \(target.count) harf")
-                                                        .font(.system(size: 11, weight: (isLengthMatch || isExactMatch) ? .bold : .medium, design: .rounded))
+                                                        .font(.system(size: 11, weight: (isLengthMatch || isExactMatch || isFamilyMatch) ? .bold : .medium, design: .rounded))
                                                         .foregroundColor(counterColor)
                                                 }
                                                 .padding(.top, 2)
@@ -4267,12 +4501,21 @@ struct PratikContentView: View {
                                 .background(Color.white)
                                 .cornerRadius(18)
                                 .shadow(color: Color.black.opacity(0.025), radius: 5, x: 0, y: 2)
+                                .overlay(alignment: .topTrailing) {
+                                    if hasQuestionStickyNote {
+                                        Circle()
+                                            .fill(Color.orange)
+                                            .frame(width: 10, height: 10)
+                                            .shadow(color: Color.orange.opacity(0.5), radius: 3, x: 0, y: 1)
+                                            .offset(x: -12, y: 12)
+                                    }
+                                }
                                 .id(idx)
                             }
                             
                             // Bottom Finish Test Button
                             Button(action: {
-                                finishActiveTest()
+                                handleFinishTestAttempt()
                             }) {
                                 HStack(spacing: 8) {
                                     Image(systemName: "checkmark.circle.fill")
@@ -4292,8 +4535,75 @@ struct PratikContentView: View {
                         .padding(16)
                     }
                     .scrollDismissesKeyboard(.never)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            HStack {
+                                Spacer()
+                                
+                                HStack(spacing: 24) {
+                                    // Aktif kutudaki metni temizle (X simgesi - En Solda)
+                                    Button(action: {
+                                        if let cur = focusedQuestionIdx {
+                                            userAnswersMap[cur] = ""
+                                        }
+                                    }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor((focusedQuestionIdx != nil && !(userAnswersMap[focusedQuestionIdx ?? -1]?.isEmpty ?? true)) ? Color.gray.opacity(0.75) : Color.gray.opacity(0.3))
+                                    }
+                                    .disabled(focusedQuestionIdx == nil || (userAnswersMap[focusedQuestionIdx ?? -1]?.isEmpty ?? true))
+                                    
+                                    // Önceki Soru (Yukarı Ok)
+                                    Button(action: {
+                                        if let cur = focusedQuestionIdx, cur > 0 {
+                                            focusedQuestionIdx = cur - 1
+                                            withAnimation(.easeInOut(duration: 0.3)) {
+                                                scrollProxy.scrollTo(cur - 1, anchor: .top)
+                                            }
+                                        }
+                                    }) {
+                                        Image(systemName: "chevron.up")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor((focusedQuestionIdx ?? 0) > 0 ? Color.primary : Color.gray.opacity(0.35))
+                                    }
+                                    .disabled((focusedQuestionIdx ?? 0) <= 0)
+                                    
+                                    // Sonraki Soru (Aşağı Ok)
+                                    Button(action: {
+                                        if let cur = focusedQuestionIdx, cur + 1 < activeQuestions.count {
+                                            focusedQuestionIdx = cur + 1
+                                            withAnimation(.easeInOut(duration: 0.3)) {
+                                                scrollProxy.scrollTo(cur + 1, anchor: .top)
+                                            }
+                                        }
+                                    }) {
+                                        Image(systemName: "chevron.down")
+                                            .font(.system(size: 15, weight: .bold))
+                                            .foregroundColor((focusedQuestionIdx ?? 0) < activeQuestions.count - 1 ? Color.primary : Color.gray.opacity(0.35))
+                                    }
+                                    .disabled((focusedQuestionIdx ?? 0) >= activeQuestions.count - 1)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 9)
+                                .background(Color(UIColor.secondarySystemBackground))
+                                .clipShape(Capsule())
+                                .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
+                            }
+                        }
+                    }
                 }
             }
+        }
+        .alert("Çözülmemiş Sorular Var", isPresented: $showUnansweredWarningAlert) {
+            Button("Geri Dön", role: .cancel) { }
+            Button("Devam Et") {
+                finishActiveTest()
+            }
+        } message: {
+            let count = activeQuestions.indices.filter { idx in
+                (userAnswersMap[idx] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }.count
+            Text("Testte henüz çözülmemiş \(count) soru bulunmaktadır. Yine de testi bitirmek istediğinize emin misiniz?")
         }
     }
                     
@@ -4344,7 +4654,6 @@ struct PratikContentView: View {
                                             .trim(from: 0, to: CGFloat(percent) / 100)
                                             .stroke(percent >= 70 ? Color.green : (percent >= 40 ? Color.orange : Color.red), style: StrokeStyle(lineWidth: 10, lineCap: .round))
                                             .rotationEffect(.degrees(-90))
-                                        
                                         VStack(spacing: 2) {
                                             Text("%\(percent)")
                                                 .font(.system(size: 28, weight: .bold, design: .rounded))
@@ -4357,10 +4666,18 @@ struct PratikContentView: View {
                                     .frame(width: 110, height: 110)
                                     .padding(.top, 10)
                                     
-                                    HStack(spacing: 16) {
-                                        statCell(title: "Doğru", value: "\(correctCount)", color: .green)
-                                        statCell(title: "Yanlış", value: "\(testResultsList.filter { !$0.isCorrect && $0.userAnswer != "Boş bırakıldı" }.count)", color: .red)
-                                        statCell(title: "Boş", value: "\(testResultsList.filter { $0.userAnswer == "Boş bırakıldı" }.count)", color: .gray)
+                                    let exactCount = testResultsList.filter { $0.isCorrect && !$0.isTypo }.count
+                                    let typosCount = testResultsList.filter { $0.isTypo }.count
+                                    let wrongCount = testResultsList.filter { !$0.isCorrect && $0.userAnswer != "Boş bırakıldı" }.count
+                                    let blankCount = testResultsList.filter { $0.userAnswer == "Boş bırakıldı" }.count
+                                    
+                                    HStack(spacing: 12) {
+                                        statCell(title: typosCount > 0 ? "Tam Doğru" : "Doğru", value: "\(exactCount)", color: .green)
+                                        if typosCount > 0 {
+                                            statCell(title: "Hatalı", value: "\(typosCount)", color: .orange)
+                                        }
+                                        statCell(title: "Yanlış", value: "\(wrongCount)", color: .red)
+                                        statCell(title: "Boş", value: "\(blankCount)", color: .gray)
                                     }
                                 }
                                 .padding(20)
@@ -4427,12 +4744,12 @@ struct PratikContentView: View {
                                         HStack(spacing: 12) {
                                             Image(systemName: "sparkles")
                                                 .font(.system(size: 18, weight: .bold))
-                                                .foregroundColor(.green)
+                                                .foregroundColor(.purple)
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text("Yeni Test Çöz")
+                                                Text("Yeni Test Başlat")
                                                     .font(.system(size: 14, weight: .bold, design: .rounded))
                                                     .foregroundColor(.primary)
-                                                Text("Farklı kelimelerle yeni test başlat.")
+                                                Text("Farklı kelimelerle yeni test oluştur.")
                                                     .font(.system(size: 11, design: .rounded))
                                                     .foregroundColor(.secondary)
                                             }
@@ -4449,15 +4766,12 @@ struct PratikContentView: View {
                                 }
                                 .padding(.horizontal, 16)
                                 
-                                // ⭐ KELİMELERİ YÖNET Accordion Section
-                                VStack(alignment: .leading, spacing: 14) {
+                                // Question Categories Accordion Summary
+                                VStack(alignment: .leading, spacing: 12) {
                                     HStack {
-                                        Image(systemName: "star.fill")
-                                            .foregroundColor(.yellow)
-                                            .font(.system(size: 15))
-                                        Text("KELİMELERİ YÖNET")
-                                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                                            .foregroundColor(.secondary)
+                                        Text("Kategori Özeti")
+                                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                                            .foregroundColor(.primary)
                                         
                                         Spacer()
                                         
@@ -4471,18 +4785,26 @@ struct PratikContentView: View {
                                                 Image(systemName: "star.slash")
                                                 Text("Yıldızları Kaldır (\(starredInTest.count))")
                                             }
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
                                             .foregroundColor(.red)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(Color.red.opacity(0.1))
+                                            .cornerRadius(10)
                                         }
                                         .disabled(starredInTest.isEmpty)
                                     }
                                     
-                                    let typoQuestions = testResultsList.filter { !$0.isCorrect && $0.userAnswer != "Boş bırakıldı" }
-                                    let correctQuestions = testResultsList.filter { $0.isCorrect }
+                                    let familyQuestions = testResultsList.filter { $0.isWordFamily }
+                                    let typoQuestions = testResultsList.filter { $0.isTypo }
+                                    let correctQuestions = testResultsList.filter { $0.isCorrect && !$0.isTypo && !$0.isWordFamily }
                                     let blankQuestions = testResultsList.filter { $0.userAnswer == "Boş bırakıldı" }
-                                    let wrongQuestions = testResultsList.filter { !$0.isCorrect }
+                                    let wrongQuestions = testResultsList.filter { !$0.isCorrect && $0.userAnswer != "Boş bırakıldı" }
                                     
                                     VStack(spacing: 8) {
+                                        if !familyQuestions.isEmpty {
+                                            accordionCategoryRow(key: "families", title: "Kelime Ailesi", count: familyQuestions.count, icon: "diagram.3.fill", color: .purple, questionList: familyQuestions)
+                                        }
                                         accordionCategoryRow(key: "errors", title: "Hatalı Kelimeler", count: typoQuestions.count, icon: "exclamationmark.triangle.fill", color: .orange, questionList: typoQuestions)
                                         accordionCategoryRow(key: "corrects", title: "Doğru Kelimeler", count: correctQuestions.count, icon: "checkmark.circle.fill", color: .green, questionList: correctQuestions)
                                         accordionCategoryRow(key: "blanks", title: "Boş Bırakılanlar", count: blankQuestions.count, icon: "slash.circle", color: .gray, questionList: blankQuestions)
@@ -4505,6 +4827,8 @@ struct PratikContentView: View {
                                     VStack(spacing: 12) {
                                         ForEach(Array(testResultsList.enumerated()), id: \.offset) { idx, item in
                                             let word = allWords.first(where: { $0.id == item.wordId })
+                                            let itemBadgeText = item.isWordFamily ? "Kelime Ailesi" : (item.isTypo ? "Hatalı" : (item.isCorrect ? "Doğru" : "Yanlış"))
+                                            let itemBadgeColor: Color = item.isWordFamily ? .purple : (item.isTypo ? .orange : (item.isCorrect ? .green : .red))
                                             
                                             VStack(alignment: .leading, spacing: 10) {
                                                 HStack {
@@ -4554,12 +4878,12 @@ struct PratikContentView: View {
                                                             .foregroundColor(.blue)
                                                     }
                                                     
-                                                    Text(item.isCorrect ? "Doğru" : "Yanlış")
+                                                    Text(itemBadgeText)
                                                         .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                        .foregroundColor(item.isCorrect ? .green : .red)
+                                                        .foregroundColor(itemBadgeColor)
                                                         .padding(.horizontal, 8)
                                                         .padding(.vertical, 3)
-                                                        .background(item.isCorrect ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                                                        .background(itemBadgeColor.opacity(0.12))
                                                         .cornerRadius(6)
                                                 }
                                                 
@@ -4574,10 +4898,10 @@ struct PratikContentView: View {
                                                             .foregroundColor(.secondary)
                                                         Text(item.userAnswer)
                                                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                                                            .foregroundColor(item.isCorrect ? .green : .red)
+                                                            .foregroundColor(itemBadgeColor)
                                                     }
                                                     
-                                                    if !item.isCorrect {
+                                                    if !item.isCorrect || item.isTypo || item.isWordFamily {
                                                         Spacer()
                                                         VStack(alignment: .trailing, spacing: 2) {
                                                             Text("Doğru Yanıt:")
@@ -5063,6 +5387,7 @@ struct PratikContentView: View {
         modeSingleMeaning = template.modeSingleMeaning
         modeComboStreak = template.modeComboStreak
         modeProgressiveHint = template.modeProgressiveHint
+        maxAllowedTypoLetters = template.maxAllowedTypoLetters
         
         savePratikSettings()
     }
@@ -5089,6 +5414,7 @@ struct PratikContentView: View {
         if modeSingleMeaning != test.modeSingleMeaning { return true }
         if modeComboStreak != test.modeComboStreak { return true }
         if modeProgressiveHint != test.modeProgressiveHint { return true }
+        if maxAllowedTypoLetters != test.maxAllowedTypoLetters { return true }
         return false
     }
     
@@ -5135,7 +5461,8 @@ struct PratikContentView: View {
             "modeMissingLetters": modeMissingLetters,
             "modeSingleMeaning": modeSingleMeaning,
             "modeComboStreak": modeComboStreak,
-            "modeProgressiveHint": modeProgressiveHint
+            "modeProgressiveHint": modeProgressiveHint,
+            "maxAllowedTypoLetters": maxAllowedTypoLetters
         ]
         
         let updates: [String: Any] = [
@@ -5189,6 +5516,18 @@ struct PratikContentView: View {
         }
     }
     
+    private func handleFinishTestAttempt() {
+        let unansweredCount = activeQuestions.indices.filter { idx in
+            (userAnswersMap[idx] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+        
+        if unansweredCount > 0 {
+            showUnansweredWarningAlert = true
+        } else {
+            finishActiveTest()
+        }
+    }
+    
     private func finishActiveTest() {
         var calculatedResults: [QuestionAnswerResult] = []
         var questionsArray: [[String: Any]] = []
@@ -5199,15 +5538,34 @@ struct PratikContentView: View {
             let isAnswered = !uAns.isEmpty
             
             let isCorrect: Bool
+            var isTypo = false
+            var isWordFamily = false
             if q.questionType == "written" {
                 let t = uAns.lowercased()
                 let c = q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                
+                let familyTerms = (q.targetWord.wordFamily ?? []).map { parseFamilyItem($0).term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                let isFamilyMatch = !familyTerms.isEmpty && familyTerms.contains(t)
+                
                 if t == c {
                     isCorrect = true
+                    isTypo = false
+                    isWordFamily = false
+                } else if isFamilyMatch {
+                    isCorrect = true
+                    isTypo = false
+                    isWordFamily = true
                 } else {
                     let dist = levenshteinDistance(t, c)
-                    let maxAllowed = c.count <= 3 ? 1 : (c.count <= 6 ? 2 : 3)
-                    isCorrect = !t.isEmpty && (dist <= maxAllowed)
+                    if !t.isEmpty && maxAllowedTypoLetters > 0 && dist <= maxAllowedTypoLetters {
+                        isCorrect = true
+                        isTypo = true
+                        isWordFamily = false
+                    } else {
+                        isCorrect = false
+                        isTypo = false
+                        isWordFamily = false
+                    }
                 }
             } else if q.questionType == "flashcard" {
                 isCorrect = uAns == "Bildim"
@@ -5226,14 +5584,18 @@ struct PratikContentView: View {
                 questionPrompt: q.prompt,
                 correctAnswer: q.correctAnswer,
                 userAnswer: finalAnsText,
-                isCorrect: isCorrect
+                isCorrect: isCorrect,
+                isTypo: isTypo,
+                isWordFamily: isWordFamily
             ))
             
             if isAnswered {
                 answersDict["\(idx)"] = [
                     "selected": [
                         "text": uAns,
-                        "isCorrect": isCorrect
+                        "isCorrect": isCorrect,
+                        "isTypo": isTypo,
+                        "isWordFamily": isWordFamily
                     ]
                 ]
             }
@@ -5341,7 +5703,7 @@ struct PratikContentView: View {
             }
             
             if let snap = try? await statRef.getDocument(), let data = snap.data() {
-                let currentCorrect = data["correctCount"] as? Int ?? 0
+                let currentCorrect = (data["correctCount"] as? NSNumber)?.intValue ?? (data["correctCount"] as? Int ?? 0)
                 let existingWords = data["words"] as? [String: Any] ?? [:]
                 
                 var mergedWords = existingWords
@@ -5414,7 +5776,7 @@ struct PratikContentView: View {
             var wordsDict: [String: Any] = [:]
             
             if let data = docSnap?.data() {
-                currentCount = data["correctCount"] as? Int ?? 0
+                currentCount = (data["correctCount"] as? NSNumber)?.intValue ?? (data["correctCount"] as? Int ?? 0)
                 wordsDict = data["words"] as? [String: Any] ?? [:]
             }
             
@@ -5496,6 +5858,7 @@ struct PratikContentView: View {
         var singleM = cfg["modeSingleMeaning"] as? Bool ?? false
         var comboS = cfg["modeComboStreak"] as? Bool ?? false
         var progH = cfg["modeProgressiveHint"] as? Bool ?? false
+        let maxTypo = (cfg["maxAllowedTypoLetters"] as? Int) ?? (cfg["maxAllowedTypoLetters"] as? NSNumber)?.intValue ?? 2
         
         if let adv = cfg["advancedOptions"] as? [String: Any] {
             if let f = adv["fillInTheBlanks"] as? Bool { fillBlanks = f }
@@ -5505,6 +5868,8 @@ struct PratikContentView: View {
             if let c = adv["comboStreak"] as? Bool { comboS = c }
             if let p = adv["progressiveHint"] as? Bool { progH = p }
         }
+        
+        let createdAtVal = parseFirestoreDate(d["createdAt"])
         
         return QuickTestTemplate(
             id: docId,
@@ -5528,7 +5893,9 @@ struct PratikContentView: View {
             modeMissingLetters: missingL,
             modeSingleMeaning: singleM,
             modeComboStreak: comboS,
-            modeProgressiveHint: progH
+            modeProgressiveHint: progH,
+            maxAllowedTypoLetters: maxTypo,
+            createdAt: createdAtVal
         )
     }
     
@@ -5544,6 +5911,7 @@ struct PratikContentView: View {
             for doc in documents {
                 templates.append(parseQuickTestTemplate(docId: doc.documentID, data: doc.data()))
             }
+            templates.sort(by: { $0.createdAt > $1.createdAt })
             
             DispatchQueue.main.async {
                 self.quickTests = templates
@@ -5596,7 +5964,8 @@ struct PratikContentView: View {
             "modeMissingLetters": modeMissingLetters,
             "modeSingleMeaning": modeSingleMeaning,
             "modeComboStreak": modeComboStreak,
-            "modeProgressiveHint": modeProgressiveHint
+            "modeProgressiveHint": modeProgressiveHint,
+            "maxAllowedTypoLetters": maxAllowedTypoLetters
         ]
         
         let data: [String: Any] = [
@@ -5625,7 +5994,7 @@ struct PratikContentView: View {
         
         Task {
             do {
-                let snap = try await db.collection("users").document(user.uid).collection("practice_tests").getDocuments()
+                let snap = try await db.collection("users").document(user.uid).collection("practice_tests").getDocumentsSmart()
                 var list: [[String: Any]] = []
                 for doc in snap.documents {
                     var d = doc.data()
@@ -5763,15 +6132,54 @@ struct PratikContentView: View {
             if let sel = selDict {
                 let userText = sel["text"] as? String ?? sel["userAnswer"] as? String ?? ""
                 var isCorrect = sel["isCorrect"] as? Bool
+                var isTypo = sel["isTypo"] as? Bool ?? false
+                var isWordFamily = sel["isWordFamily"] as? Bool ?? false
                 
                 if isCorrect == nil {
                     if q.questionType == "written" {
-                        isCorrect = userText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let t = userText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        let c = q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        
+                        let familyTerms = (q.targetWord.wordFamily ?? []).map { parseFamilyItem($0).term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                        let isFamilyMatch = !familyTerms.isEmpty && familyTerms.contains(t)
+                        
+                        if t == c {
+                            isCorrect = true
+                            isTypo = false
+                            isWordFamily = false
+                        } else if isFamilyMatch {
+                            isCorrect = true
+                            isTypo = false
+                            isWordFamily = true
+                        } else {
+                            let dist = levenshteinDistance(t, c)
+                            if !t.isEmpty && maxAllowedTypoLetters > 0 && dist <= maxAllowedTypoLetters {
+                                isCorrect = true
+                                isTypo = true
+                                isWordFamily = false
+                            } else {
+                                isCorrect = false
+                                isTypo = false
+                                isWordFamily = false
+                            }
+                        }
                     } else if q.questionType == "tf" {
                         let expected = (q.isTrueStatement ?? true) ? "Doğru" : "Yanlış"
                         isCorrect = userText == expected
                     } else {
                         isCorrect = userText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    }
+                } else if q.questionType == "written" && isCorrect == true && !isWordFamily {
+                    let t = userText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let c = q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let familyTerms = (q.targetWord.wordFamily ?? []).map { parseFamilyItem($0).term.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                    let isFamilyMatch = !familyTerms.isEmpty && familyTerms.contains(t)
+                    
+                    if isFamilyMatch {
+                        isWordFamily = true
+                        isTypo = false
+                    } else if t != c {
+                        isTypo = true
                     }
                 }
                 
@@ -5783,7 +6191,9 @@ struct PratikContentView: View {
                     questionPrompt: q.prompt,
                     correctAnswer: q.correctAnswer,
                     userAnswer: finalAnsText,
-                    isCorrect: isCorrect ?? false
+                    isCorrect: isCorrect ?? false,
+                    isTypo: isTypo,
+                    isWordFamily: isWordFamily
                 ))
             }
         }
@@ -5919,7 +6329,8 @@ struct PratikContentView: View {
                 Spacer()
                 
                 Button(action: {
-                    deleteSinglePracticeTest(id: id)
+                    deletingSingleTestId = id
+                    showDeleteSingleTestAlert = true
                 }) {
                     Image(systemName: "trash.fill")
                         .font(.system(size: 12))
@@ -6030,6 +6441,8 @@ struct QuickTestTemplate: Identifiable {
     let modeSingleMeaning: Bool
     let modeComboStreak: Bool
     let modeProgressiveHint: Bool
+    var maxAllowedTypoLetters: Int = 2
+    var createdAt: Date = Date()
     
     var testType: String {
         var types: [String] = []
@@ -6065,6 +6478,7 @@ struct QuickTestTemplate: Identifiable {
         if modeSingleMeaning { arr.append("Tek Anlam") }
         if modeComboStreak { arr.append("Combo") }
         if modeProgressiveHint { arr.append("Kademeli İpucu") }
+        if typeWritten { arr.append("Tolerans: \(maxAllowedTypoLetters) Harf") }
         return arr.isEmpty ? "Standart" : arr.joined(separator: ", ")
     }
 }

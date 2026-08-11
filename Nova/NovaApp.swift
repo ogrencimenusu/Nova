@@ -13,11 +13,17 @@ import FirebaseFirestore
 import GoogleSignIn
 
 class AppDelegate: NSObject, UIApplicationDelegate {
-    var listener: ListenerRegistration?
+    private var listeners: [ListenerRegistration] = []
     
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         FirebaseApp.configure()
+        
+        // Enable Firestore Offline Cache / Disk Persistence to dramatically reduce reads
+        let settings = Firestore.firestore().settings
+        settings.isPersistenceEnabled = true
+        settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: 100 * 1024 * 1024))
+        Firestore.firestore().settings = settings
         
         // Share Firebase Auth with Widget
         do {
@@ -29,8 +35,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
                     if let user = user {
                         self.startListening(uid: user.uid)
                     } else {
-                        self.listener?.remove()
-                        self.listener = nil
+                        self.stopListening()
                     }
                 }
             }
@@ -41,12 +46,19 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
     
+    func stopListening() {
+        for listener in listeners {
+            listener.remove()
+        }
+        listeners.removeAll()
+    }
+    
     func startListening(uid: String) {
+        stopListening()
         let db = Firestore.firestore()
         
         // Listen to Notes
-        listener?.remove()
-        listener = db.collection("users").document(uid).collection("notes")
+        let l1 = db.collection("users").document(uid).collection("notes")
             .addSnapshotListener { snapshot, error in
                 guard let _ = snapshot else { return }
                 print("App detected changes in notes! Reloading widget...")
@@ -54,7 +66,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
             
         // Listen to Daily Stats
-        db.collection("users").document(uid).collection("daily_stats")
+        let l2 = db.collection("users").document(uid).collection("daily_stats")
             .addSnapshotListener { snapshot, error in
                 guard let _ = snapshot else { return }
                 print("App detected changes in daily_stats! Reloading widget...")
@@ -62,7 +74,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
             
         // Listen to Banks
-        db.collection("users").document(uid).collection("banks")
+        let l3 = db.collection("users").document(uid).collection("banks")
             .addSnapshotListener { snapshot, error in
                 guard let _ = snapshot else { return }
                 print("App detected changes in banks! Reloading widget...")
@@ -70,12 +82,38 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
             
         // Listen to Bank Transactions
-        db.collection("users").document(uid).collection("bankTransactions")
+        let l4 = db.collection("users").document(uid).collection("bankTransactions")
             .addSnapshotListener { snapshot, error in
                 guard let _ = snapshot else { return }
                 print("App detected changes in bankTransactions! Reloading widget...")
                 WidgetCenter.shared.reloadAllTimelines()
             }
+
+        // Listen to Institutions
+        let l5 = db.collection("users").document(uid).collection("institutions")
+            .addSnapshotListener { snapshot, error in
+                guard let _ = snapshot else { return }
+                print("App detected changes in institutions! Reloading widget...")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+
+        // Listen to Stocks
+        let l6 = db.collection("users").document(uid).collection("stocks")
+            .addSnapshotListener { snapshot, error in
+                guard let _ = snapshot else { return }
+                print("App detected changes in stocks! Reloading widget...")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+
+        // Listen to Finance Transactions
+        let l7 = db.collection("users").document(uid).collection("financeTransactions")
+            .addSnapshotListener { snapshot, error in
+                guard let _ = snapshot else { return }
+                print("App detected changes in financeTransactions! Reloading widget...")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+            
+        listeners = [l1, l2, l3, l4, l5, l6, l7]
     }
     
     private func getKeychainGroup() -> String? {
@@ -168,3 +206,204 @@ struct NovaApp: App {
         }
     }
 }
+
+// MARK: - Firestore Cache Extensions
+extension Query {
+    func getDocumentsSmart() async throws -> QuerySnapshot {
+        do {
+            let cacheSnap = try await self.getDocuments(source: .cache)
+            if !cacheSnap.documents.isEmpty {
+                return cacheSnap
+            }
+        } catch {
+            // Fallback to server if cache miss or error
+        }
+        return try await self.getDocuments(source: .default)
+    }
+}
+
+extension DocumentReference {
+    func getDocumentSmart() async throws -> DocumentSnapshot {
+        do {
+            let cacheSnap = try await self.getDocument(source: .cache)
+            if cacheSnap.exists {
+                return cacheSnap
+            }
+        } catch {
+            // Fallback to server if cache miss or error
+        }
+        return try await self.getDocument(source: .default)
+    }
+}
+
+// MARK: - Pre-Calculated Account Summary Helper
+struct AccountSummary {
+    var totalBankBalance: Double
+    var totalStockPortfolio: Double
+    var totalStockTax: Double
+    var bankBalances: [String: Double]
+    var lastUpdated: Date?
+}
+
+class AccountSummaryHelper {
+    static let shared = AccountSummaryHelper()
+    
+    func summaryDocRef(uid: String) -> DocumentReference {
+        return Firestore.firestore()
+            .collection("users")
+            .document(uid)
+            .collection("summaries")
+            .document("overview")
+    }
+    
+    func updateBankTransactionSummary(uid: String, bankId: String, amountDelta: Double) {
+        guard !uid.isEmpty else { return }
+        let ref = summaryDocRef(uid: uid)
+        
+        ref.setData([
+            "totalBankBalance": FieldValue.increment(amountDelta),
+            "bankBalances.\(bankId)": FieldValue.increment(amountDelta),
+            "lastUpdated": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+    
+    func updateStockPortfolioSummary(uid: String, portfolioDelta: Double, taxDelta: Double) {
+        guard !uid.isEmpty else { return }
+        let ref = summaryDocRef(uid: uid)
+        
+        ref.setData([
+            "totalStockPortfolio": FieldValue.increment(portfolioDelta),
+            "totalStockTax": FieldValue.increment(taxDelta),
+            "lastUpdated": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+    
+    func resyncAllBankSummaries(uid: String, banks: [BankItem], transactions: [BankTransactionItem]) {
+        guard !uid.isEmpty else { return }
+        var balancesMap: [String: Double] = [:]
+        var grandTotal: Double = 0.0
+        
+        for b in banks {
+            balancesMap[b.id] = 0.0
+        }
+        
+        for t in transactions {
+            guard !t.deleted && t.type != "Eyv0oZlOuCPWJbmRkv0h" && !t.bankId.isEmpty else { continue }
+            balancesMap[t.bankId] = (balancesMap[t.bankId] ?? 0.0) + t.amount
+        }
+        
+        let visibleIds = Set(banks.filter { $0.visible }.map { $0.id })
+        for (bId, bal) in balancesMap {
+            if visibleIds.contains(bId) {
+                grandTotal += bal
+            }
+        }
+        
+        summaryDocRef(uid: uid).setData([
+            "bankBalances": balancesMap,
+            "totalBankBalance": grandTotal,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+    
+    func resyncAllFinanceSummaries(uid: String, institutions: [FinanceInstitutionItem], stocks: [FinanceStockItem], transactions: [FinanceTransactionItem]) {
+        guard !uid.isEmpty else { return }
+        var instBalancesMap: [String: Double] = [:]
+        var totalPortfolio: Double = 0.0
+        var totalTax: Double = 0.0
+        
+        for inst in institutions {
+            instBalancesMap[inst.id] = 0.0
+        }
+        
+        var stockMap: [String: Double] = [:]
+        for s in stocks {
+            stockMap[s.id] = s.currentPrice
+        }
+        
+        let activeTrans = transactions.filter { !$0.deleted }
+        
+        var stockBuyLots: [String: [(price: Double, taxRate: Double, remaining: Double)]] = [:]
+        
+        let sortedTrans = activeTrans.sorted {
+            if $0.date != $1.date { return $0.date < $1.date }
+            let isAlis0 = $0.type.uppercased().hasPrefix("AL")
+            let isAlis1 = $1.type.uppercased().hasPrefix("AL")
+            if isAlis0 != isAlis1 { return isAlis0 }
+            return ($0.createdAt ?? Date.distantPast) < ($1.createdAt ?? Date.distantPast)
+        }
+        
+        for t in sortedTrans {
+            let key = "\(t.stockId)_\(t.institutionId)"
+            if t.type.hasPrefix("AL") {
+                if stockBuyLots[key] == nil { stockBuyLots[key] = [] }
+                stockBuyLots[key]?.append((price: t.price, taxRate: t.taxRate, remaining: t.quantity))
+            } else if t.type.hasPrefix("SAT") {
+                var remainingToSell = t.quantity
+                if var lots = stockBuyLots[key] {
+                    for i in 0..<lots.count {
+                        if remainingToSell <= 0 { break }
+                        if lots[i].remaining <= 0 { continue }
+                        let toDeduct = min(lots[i].remaining, remainingToSell)
+                        lots[i].remaining -= toDeduct
+                        remainingToSell -= toDeduct
+                    }
+                    stockBuyLots[key] = lots
+                }
+            }
+        }
+        
+        var stockSummariesMap: [String: [String: Any]] = [:]
+        
+        for (key, lots) in stockBuyLots {
+            let parts = key.split(separator: "_")
+            guard parts.count >= 2 else { continue }
+            let stockId = String(parts[0])
+            let instId = String(parts[1])
+            let currentPrice = stockMap[stockId] ?? 0.0
+            
+            for lot in lots {
+                if lot.remaining > 0 {
+                    let prc = currentPrice > 0 ? currentPrice : lot.price
+                    let lotVal = lot.remaining * prc
+                    totalPortfolio += lotVal
+                    instBalancesMap[instId] = (instBalancesMap[instId] ?? 0.0) + lotVal
+                    
+                    let profit = (currentPrice - lot.price) * lot.remaining
+                    if profit > 0 && lot.taxRate > 0 {
+                        totalTax += profit * (lot.taxRate / 100.0)
+                    }
+                    
+                    var stockSum = stockSummariesMap[stockId] ?? [
+                        "stockId": stockId,
+                        "quantity": 0.0,
+                        "totalCost": 0.0,
+                        "firstPurchaseDate": "",
+                        "institutionBreakdown": [String: Double]()
+                    ]
+                    
+                    let currentQty = (stockSum["quantity"] as? Double) ?? 0.0
+                    let currentCost = (stockSum["totalCost"] as? Double) ?? 0.0
+                    var currentBreakdown = (stockSum["institutionBreakdown"] as? [String: Double]) ?? [:]
+                    
+                    stockSum["quantity"] = currentQty + lot.remaining
+                    stockSum["totalCost"] = currentCost + (lot.remaining * lot.price)
+                    currentBreakdown[instId] = (currentBreakdown[instId] ?? 0.0) + lot.remaining
+                    stockSum["institutionBreakdown"] = currentBreakdown
+                    
+                    stockSummariesMap[stockId] = stockSum
+                }
+            }
+        }
+        
+        summaryDocRef(uid: uid).setData([
+            "institutionBalances": instBalancesMap,
+            "stockSummaries": stockSummariesMap,
+            "totalStockPortfolio": totalPortfolio,
+            "totalStockTax": totalTax,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+}
+
+

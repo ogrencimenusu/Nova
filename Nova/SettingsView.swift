@@ -7,6 +7,19 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section(header: Text("Veri & Önbellek")) {
+                    Button(action: {
+                        BankOperationsViewModel.shared.clearCacheAndReload()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .foregroundColor(.blue)
+                            Text("Önbelleği Temizle & Verileri Yenile")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                
                 Section(header: Text("Hesap")) {
                     Button(action: {
                         authViewModel.signOut()

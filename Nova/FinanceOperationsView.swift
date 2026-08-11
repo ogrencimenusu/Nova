@@ -2,6 +2,21 @@ import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
 
+private let yyyyMMddFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
+private let trDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "dd.MM.yyyy HH:mm"
+    f.locale = Locale(identifier: "tr_TR")
+    return f
+}()
+
+
 // MARK: - Finance Models
 
 struct FinanceInstitutionItem: Identifiable, Codable, Equatable {
@@ -107,21 +122,48 @@ struct AnalysisItem: Identifiable {
 // MARK: - Helpers
 
 private func parseDoubleField(_ val: Any?) -> Double {
-    guard let val = val else { return 0 }
+    guard let val = val else { return 0.0 }
     if let d = val as? Double { return d }
+    if let num = val as? NSNumber { return num.doubleValue }
     if let i = val as? Int { return Double(i) }
     if let s = val as? String {
-        let clean = s.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
-        return Double(clean) ?? (Double(s) ?? 0)
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return 0.0 }
+        
+        let isNegative = trimmed.hasPrefix("-")
+        var clean = trimmed.replacingOccurrences(of: "-", with: "")
+                           .replacingOccurrences(of: "+", with: "")
+                           .replacingOccurrences(of: "₺", with: "")
+                           .replacingOccurrences(of: "$", with: "")
+                           .replacingOccurrences(of: "€", with: "")
+                           .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if clean.contains(",") && clean.contains(".") {
+            if clean.lastIndex(of: ",")! > clean.lastIndex(of: ".")! {
+                clean = clean.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            } else {
+                clean = clean.replacingOccurrences(of: ",", with: "")
+            }
+        } else if clean.contains(",") {
+            clean = clean.replacingOccurrences(of: ",", with: ".")
+        } else if clean.contains(".") {
+            let components = clean.components(separatedBy: ".")
+            if components.count > 1 {
+                let lastComp = components.last ?? ""
+                if lastComp.count == 3 {
+                    clean = clean.replacingOccurrences(of: ".", with: "")
+                }
+            }
+        }
+        
+        let res = Double(clean) ?? 0.0
+        return isNegative ? -res : res
     }
-    return 0
+    return 0.0
 }
 
 private func dateFromString(_ s: String) -> Date? {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    return f.date(from: s)
+    return yyyyMMddFormatter.date(from: s)
 }
 
 private func formatTL(_ val: Double, decimals: Int = 2) -> String {
@@ -140,6 +182,15 @@ private func formatPct(_ val: Double) -> String {
     formatter.minimumFractionDigits = 2
     formatter.maximumFractionDigits = 2
     return "%" + (formatter.string(from: NSNumber(value: val)) ?? "0,00")
+}
+
+private func formatPctNoSymbol(_ val: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.locale = Locale(identifier: "tr_TR")
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = 2
+    return formatter.string(from: NSNumber(value: val)) ?? "\(val)"
 }
 
 private func formatQty(_ val: Double) -> String {
@@ -195,8 +246,27 @@ class FinanceOperationsViewModel: ObservableObject {
     @Published var transactions: [FinanceTransactionItem] = []
     @Published var isLoading: Bool = true
 
+    @Published var lots: [ProcessedFinanceLot] = []
+    @Published var instStats: [String: InstitutionStats] = [:]
+    @Published var portfolio: [PortfolioItem] = []
+
     private var listeners: [ListenerRegistration] = []
     private var hasStarted: Bool = false
+
+    private func recalculateAll() {
+        let computedLots = processedLots()
+        let computedStats = computeInstitutionStats(processed: computedLots)
+        let computedPortfolio = computePortfolio(processed: computedLots)
+        
+        DispatchQueue.main.async {
+            self.lots = computedLots
+            self.instStats = computedStats
+            self.portfolio = computedPortfolio
+            if let user = Auth.auth().currentUser {
+                AccountSummaryHelper.shared.resyncAllFinanceSummaries(uid: user.uid, institutions: self.institutions, stocks: self.stocks, transactions: self.transactions)
+            }
+        }
+    }
 
     func startListeningIfNeeded() {
         guard !hasStarted else { return }
@@ -230,7 +300,10 @@ class FinanceOperationsViewModel: ObservableObject {
                 ))
             }
             list.sort { $0.order < $1.order }
-            DispatchQueue.main.async { self.institutions = list }
+            DispatchQueue.main.async {
+                self.institutions = list
+                self.recalculateAll()
+            }
         }
 
         let stockListener = userDoc.collection("stocks").addSnapshotListener { snap, _ in
@@ -249,7 +322,11 @@ class FinanceOperationsViewModel: ObservableObject {
                     createdAt: (data["createdAt"] as? Timestamp)?.dateValue()
                 ))
             }
-            DispatchQueue.main.async { self.stocks = list; self.isLoading = false }
+            DispatchQueue.main.async {
+                self.stocks = list
+                self.isLoading = false
+                self.recalculateAll()
+            }
         }
 
         let transListener = userDoc.collection("financeTransactions").addSnapshotListener { snap, _ in
@@ -262,7 +339,7 @@ class FinanceOperationsViewModel: ObservableObject {
                     id: doc.documentID,
                     institutionId: data["institutionId"] as? String ?? "",
                     stockId: data["stockId"] as? String ?? "",
-                    type: data["type"] as? String ?? "ALIS",
+                    type: ((data["type"] as? String ?? "ALIŞ").uppercased().hasPrefix("AL")) ? "ALIŞ" : "SATIŞ",
                     quantity: parseDoubleField(data["quantity"]),
                     price: parseDoubleField(data["price"]),
                     taxRate: parseDoubleField(data["taxRate"]),
@@ -272,7 +349,10 @@ class FinanceOperationsViewModel: ObservableObject {
                     createdAt: (data["createdAt"] as? Timestamp)?.dateValue()
                 ))
             }
-            DispatchQueue.main.async { self.transactions = list }
+            DispatchQueue.main.async {
+                self.transactions = list
+                self.recalculateAll()
+            }
         }
 
         self.listeners = [instListener, stockListener, transListener]
@@ -305,30 +385,61 @@ class FinanceOperationsViewModel: ObservableObject {
     func addTransaction(institutionId: String, stockId: String, type: String,
                         quantity: Double, price: Double, taxRate: Double, date: String) {
         guard let user = Auth.auth().currentUser else { return }
+        let normalizedType = type.uppercased().hasPrefix("AL") ? "ALIŞ" : "SATIŞ"
         Firestore.firestore().collection("users").document(user.uid)
             .collection("financeTransactions")
             .addDocument(data: [
-                "institutionId": institutionId, "stockId": stockId, "type": type,
+                "institutionId": institutionId, "stockId": stockId, "type": normalizedType,
                 "quantity": quantity, "price": price, "taxRate": taxRate, "date": date,
-                "remainingQuantity": type.hasPrefix("AL") ? quantity : 0,
+                "remainingQuantity": normalizedType.hasPrefix("AL") ? quantity : 0,
                 "createdAt": FieldValue.serverTimestamp(), "deleted": false
             ])
+            
+        let isAlis = normalizedType.hasPrefix("AL")
+        let amount = quantity * price
+        let portfolioDelta = isAlis ? amount : -amount
+        AccountSummaryHelper.shared.updateStockPortfolioSummary(uid: user.uid, portfolioDelta: portfolioDelta, taxDelta: 0)
     }
 
     func updateTransaction(id: String, institutionId: String, stockId: String, type: String,
                            quantity: Double, price: Double, taxRate: Double, date: String) {
         guard let user = Auth.auth().currentUser else { return }
+        let normalizedType = type.uppercased().hasPrefix("AL") ? "ALIŞ" : "SATIŞ"
+        let oldTrans = transactions.first(where: { $0.id == id })
+        let oldIsAlis = (oldTrans?.type ?? "ALIŞ").uppercased().hasPrefix("AL")
+        let oldAmount = (oldTrans?.quantity ?? 0) * (oldTrans?.price ?? 0)
+        let oldDelta = oldIsAlis ? oldAmount : -oldAmount
+        
+        let newIsAlis = normalizedType.hasPrefix("AL")
+        let newAmount = quantity * price
+        let newDelta = newIsAlis ? newAmount : -newAmount
+        
+        let netDelta = newDelta - oldDelta
+        
         Firestore.firestore().collection("users").document(user.uid)
             .collection("financeTransactions").document(id)
-            .updateData(["institutionId": institutionId, "stockId": stockId, "type": type,
+            .updateData(["institutionId": institutionId, "stockId": stockId, "type": normalizedType,
                          "quantity": quantity, "price": price, "taxRate": taxRate, "date": date])
+                         
+        if netDelta != 0 {
+            AccountSummaryHelper.shared.updateStockPortfolioSummary(uid: user.uid, portfolioDelta: netDelta, taxDelta: 0)
+        }
     }
 
     func deleteTransaction(id: String) {
         guard let user = Auth.auth().currentUser else { return }
+        let oldTrans = transactions.first(where: { $0.id == id })
+        let oldIsAlis = (oldTrans?.type ?? "AL").hasPrefix("AL")
+        let oldAmount = (oldTrans?.quantity ?? 0) * (oldTrans?.price ?? 0)
+        let oldDelta = oldIsAlis ? oldAmount : -oldAmount
+        
         Firestore.firestore().collection("users").document(user.uid)
             .collection("financeTransactions").document(id)
             .updateData(["deleted": true])
+            
+        if oldDelta != 0 {
+            AccountSummaryHelper.shared.updateStockPortfolioSummary(uid: user.uid, portfolioDelta: -oldDelta, taxDelta: 0)
+        }
     }
 
     func updateStockPrice(id: String, name: String, newPrice: Double, oldPrice: Double) {
@@ -357,7 +468,9 @@ class FinanceOperationsViewModel: ObservableObject {
     func processedLots() -> [ProcessedFinanceLot] {
         let sorted = transactions.sorted {
             if $0.date != $1.date { return $0.date < $1.date }
-            if $0.type != $1.type { return $0.type.hasPrefix("AL") }
+            let isAlis0 = $0.type.uppercased().hasPrefix("AL")
+            let isAlis1 = $1.type.uppercased().hasPrefix("AL")
+            if isAlis0 != isAlis1 { return isAlis0 }
             return ($0.createdAt ?? Date.distantPast) < ($1.createdAt ?? Date.distantPast)
         }
 
@@ -371,7 +484,7 @@ class FinanceOperationsViewModel: ObservableObject {
             let key = "\(t.stockId)_\(t.institutionId)"
             if runningBalances[key] == nil { runningBalances[key] = 0 }
             if buyLots[key] == nil { buyLots[key] = [] }
-            let isAlis = t.type.hasPrefix("AL")
+            let isAlis = t.type.uppercased().hasPrefix("AL")
 
             if isAlis {
                 let idx = buyLots[key]!.count
@@ -520,10 +633,11 @@ struct FinanceOperationsView: View {
     @State private var showAddSheet: Bool = false
     @State private var editingTransaction: FinanceTransactionItem? = nil
     @State private var editingStock: FinanceStockItem? = nil
+    @State private var selectedInstitution: FinanceInstitutionItem? = nil
 
-    private var lots: [ProcessedFinanceLot] { viewModel.processedLots() }
-    private var instStats: [String: InstitutionStats] { viewModel.computeInstitutionStats(processed: lots) }
-    private var portfolio: [PortfolioItem] { viewModel.computePortfolio(processed: lots) }
+    private var lots: [ProcessedFinanceLot] { viewModel.lots }
+    private var instStats: [String: InstitutionStats] { viewModel.instStats }
+    private var portfolio: [PortfolioItem] { viewModel.portfolio }
 
     private var filteredLots: [ProcessedFinanceLot] {
         var result = lots.reversed() as [ProcessedFinanceLot]
@@ -552,11 +666,24 @@ struct FinanceOperationsView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
 
+                            // Standard Page Title
+                            HStack {
+                                Text("Finans")
+                                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+
                             // Section 1: Kurumlar (Adı "Kurumlar" olarak güncellendi)
                             FinanceInstitutionsSectionView(
                                 institutions: viewModel.institutions.filter { $0.visible },
                                 instStats: instStats,
-                                onVisibility: { showVisibilitySheet = true }
+                                onVisibility: { showVisibilitySheet = true },
+                                onSelectInstitution: { inst in
+                                    selectedInstitution = inst
+                                }
                             )
 
                             dividerSection()
@@ -610,33 +737,16 @@ struct FinanceOperationsView: View {
                     }
                 }
             }
-            .navigationTitle("Finans")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 10) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "magnifyingglass").foregroundColor(.gray).font(.system(size: 12))
-                            TextField("Ara...", text: $searchText).font(.system(size: 12)).frame(width: 85)
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 5)
-                        .background(Color.white.opacity(0.9)).cornerRadius(10)
-
-                        Button(action: { showAddSheet = true }) {
-                            Image(systemName: "plus").font(.system(size: 16, weight: .bold))
-                        }
-                    }
-                }
-            }
+            .navigationBarHidden(true)
             .onAppear { viewModel.startListeningIfNeeded() }
             .sheet(isPresented: $showVisibilitySheet) { FinanceVisibilitySheet(viewModel: viewModel) }
             .sheet(isPresented: $showAddSheet) {
-                FinanceAddEditSheet(transaction: nil, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio) { instId, stockId, type, qty, price, tax, date in
+                FinanceAddEditSheet(transaction: nil, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
                     viewModel.addTransaction(institutionId: instId, stockId: stockId, type: type, quantity: qty, price: price, taxRate: tax, date: date)
                 }
             }
             .sheet(item: $editingTransaction) { trans in
-                FinanceAddEditSheet(transaction: trans, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio) { instId, stockId, type, qty, price, tax, date in
+                FinanceAddEditSheet(transaction: trans, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
                     viewModel.updateTransaction(id: trans.id, institutionId: instId, stockId: stockId, type: type, quantity: qty, price: price, taxRate: tax, date: date)
                 }
             }
@@ -644,6 +754,13 @@ struct FinanceOperationsView: View {
                 FinanceStockPriceEditSheet(stock: stock) { newPrice in
                     viewModel.updateStockPrice(id: stock.id, name: stock.name, newPrice: newPrice, oldPrice: stock.currentPrice)
                 }
+            }
+            .sheet(item: $selectedInstitution) { inst in
+                FinanceInstitutionDetailSheet(
+                    institution: inst,
+                    viewModel: viewModel,
+                    stats: instStats[inst.id] ?? InstitutionStats()
+                )
             }
         }
     }
@@ -659,6 +776,7 @@ struct FinanceInstitutionsSectionView: View {
     let institutions: [FinanceInstitutionItem]
     let instStats: [String: InstitutionStats]
     let onVisibility: () -> Void
+    let onSelectInstitution: (FinanceInstitutionItem) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -667,9 +785,13 @@ struct FinanceInstitutionsSectionView: View {
                 .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
+                LazyHStack(spacing: 14) {
                     ForEach(institutions) { inst in
                         InstCard(institution: inst, stats: instStats[inst.id] ?? InstitutionStats())
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onSelectInstitution(inst)
+                            }
                     }
                     Button(action: onVisibility) {
                         VStack(spacing: 10) {
@@ -807,6 +929,172 @@ struct FinanceVisibilitySheet: View {
     }
 }
 
+// MARK: - Institution Detail Sheet
+
+struct FinanceInstitutionDetailSheet: View {
+    let institution: FinanceInstitutionItem
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    let stats: InstitutionStats
+    @Environment(\.dismiss) var dismiss
+
+    @State private var stockViewLayout: String = "gallery"
+    @State private var editingStock: FinanceStockItem? = nil
+
+    private var instLots: [ProcessedFinanceLot] {
+        viewModel.lots.filter { $0.institutionId == institution.id }
+    }
+
+    private var instPortfolio: [PortfolioItem] {
+        viewModel.computePortfolio(processed: instLots)
+    }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Header Card for Institution Stats
+                    InstitutionHeaderCard(institution: institution, stats: stats)
+                        .padding(.horizontal, 16)
+
+                    // Stocks Section header & Layout Buttons
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 0) {
+                            Text("Hisse ve Fonlar (\(instPortfolio.count))")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                            Spacer()
+                            HStack(spacing: 4) {
+                                layoutBtn("Galeri", icon: "square.grid.2x2.fill", layout: "gallery")
+                                layoutBtn("Tablo", icon: "list.bullet", layout: "table")
+                                layoutBtn("Ozel", icon: "tablecells.fill", layout: "special")
+                            }
+                        }
+                        .padding(.horizontal, 16)
+
+                        if instPortfolio.isEmpty {
+                            HStack {
+                                Spacer()
+                                VStack(spacing: 10) {
+                                    Image(systemName: "chart.line.uptrend.xyaxis")
+                                        .font(.system(size: 36))
+                                        .foregroundColor(.gray.opacity(0.4))
+                                    Text("Bu kurumda aktif hisse/fon bulunamadı.")
+                                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.vertical, 32)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+                            .padding(.horizontal, 16)
+                        } else {
+                            switch stockViewLayout {
+                            case "table":
+                                StocksTableView(portfolio: instPortfolio, onSelectStock: { s in editingStock = s })
+                            case "special":
+                                StocksSpecialView(processedLots: instLots, stocks: viewModel.stocks, institutions: [institution], onSelectStock: { s in editingStock = s })
+                            default:
+                                StocksGalleryView(portfolio: instPortfolio, onSelectStock: { s in editingStock = s })
+                            }
+                        }
+                    }
+
+                    Spacer().frame(height: 20)
+                }
+                .padding(.top, 16)
+            }
+            .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+            .navigationTitle(institution.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Kapat") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+            .sheet(item: $editingStock) { stock in
+                FinanceStockPriceEditSheet(stock: stock) { newPrice in
+                    viewModel.updateStockPrice(id: stock.id, name: stock.name, newPrice: newPrice, oldPrice: stock.currentPrice)
+                }
+            }
+        }
+    }
+
+    private func layoutBtn(_ title: String, icon: String, layout: String) -> some View {
+        Button(action: { stockViewLayout = layout }) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10))
+                Text(title).font(.system(size: 10, weight: .semibold))
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(stockViewLayout == layout ? Color.blue.opacity(0.12) : Color.clear)
+            .foregroundColor(stockViewLayout == layout ? .blue : .secondary)
+            .cornerRadius(8)
+        }
+    }
+}
+
+struct InstitutionHeaderCard: View {
+    let institution: FinanceInstitutionItem
+    let stats: InstitutionStats
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.blue.opacity(0.08)).frame(width: 44, height: 44)
+                    if !institution.logo.isEmpty, let url = URL(string: institution.logo) {
+                        AsyncImage(url: url) { img in img.resizable().scaledToFit() }
+                            placeholder: { Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 18)) }
+                        .frame(width: 30, height: 30).clipShape(Circle())
+                    } else {
+                        Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 18))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(institution.name)
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text("Kurum Portföy Özeti")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 1)
+
+            VStack(spacing: 6) {
+                instRow("Net Kar/Zarar", stats.unrealizedNet, colored: true)
+                instRow("Brut Kar/Zarar", stats.unrealizedGross, colored: true)
+                instRow("Gunluk Kazanc", stats.dailyGain, colored: true)
+
+                Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 1).padding(.vertical, 4)
+
+                instRow("Portfoy Degeri", stats.totalInvestment, colored: false)
+                instRow("Brut Deger", stats.totalInvestment + stats.unrealizedGross, colored: true)
+                instRow("Net Deger", stats.totalInvestment + stats.unrealizedNet, colored: true)
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.gray.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 3)
+    }
+
+    private func instRow(_ label: String, _ value: Double, colored: Bool) -> some View {
+        HStack {
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundColor(.secondary)
+            Spacer()
+            Text((colored && value > 0 ? "+" : "") + formatTL(value))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(colored ? (value > 0 ? .green : value < 0 ? .red : .secondary) : .primary)
+        }
+    }
+}
+
 // MARK: - Section 2: Mevcut Hisseler
 
 struct FinanceStocksSectionView: View {
@@ -868,7 +1156,7 @@ struct StocksGalleryView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            LazyHStack(spacing: 14) {
                 ForEach(portfolio) { item in
                     let sItem = FinanceStockItem(id: item.id, name: item.name, currentPrice: item.currentPrice, previousPrice: item.previousPrice, dailyChange: item.dailyChange, updatedAt: item.updatedAt, createdAt: nil)
                     StockGalleryCard(item: item)
@@ -983,35 +1271,37 @@ struct StocksTableView: View {
             }
             .padding(.vertical, 10).background(Color.gray.opacity(0.06))
 
-            ForEach(Array(portfolio.enumerated()), id: \.1.id) { idx, item in
-                let sItem = FinanceStockItem(id: item.id, name: item.name, currentPrice: item.currentPrice, previousPrice: item.previousPrice, dailyChange: item.dailyChange, updatedAt: item.updatedAt, createdAt: nil)
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(item.name).font(.system(size: 14, weight: .bold)).foregroundColor(.blue)
-                        Text(formatQty(item.quantity) + " lot").font(.system(size: 11)).foregroundColor(.secondary)
-                    }.frame(minWidth: 70, alignment: .leading).padding(.leading, 16)
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(formatTL(item.currentPrice, decimals: 4)).font(.system(size: 12, weight: .bold))
-                        Text("Ort: " + formatTL(item.avgPrice, decimals: 4)).font(.system(size: 10)).foregroundColor(.secondary)
-                    }.frame(width: 86, alignment: .trailing)
-                    HStack(spacing: 2) {
-                        Image(systemName: item.dailyChange >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.system(size: 7))
-                        Text(formatPct(item.dailyChange)).font(.system(size: 11, weight: .bold))
-                    }.foregroundColor(item.dailyChange >= 0 ? .green : .red).frame(width: 60, alignment: .trailing)
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text((item.totalProfit >= 0 ? "+" : "") + formatTL(item.totalProfit))
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(item.totalProfit >= 0 ? .green : .red)
-                        Text(formatPct(item.profitPercentage)).font(.system(size: 10)).foregroundColor(.secondary)
-                    }.frame(width: 96, alignment: .trailing).padding(.trailing, 16)
+            LazyVStack(spacing: 0) {
+                ForEach(Array(portfolio.enumerated()), id: \.1.id) { idx, item in
+                    let sItem = FinanceStockItem(id: item.id, name: item.name, currentPrice: item.currentPrice, previousPrice: item.previousPrice, dailyChange: item.dailyChange, updatedAt: item.updatedAt, createdAt: nil)
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.name).font(.system(size: 14, weight: .bold)).foregroundColor(.blue)
+                            Text(formatQty(item.quantity) + " lot").font(.system(size: 11)).foregroundColor(.secondary)
+                        }.frame(minWidth: 70, alignment: .leading).padding(.leading, 16)
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(formatTL(item.currentPrice, decimals: 4)).font(.system(size: 12, weight: .bold))
+                            Text("Ort: " + formatTL(item.avgPrice, decimals: 4)).font(.system(size: 10)).foregroundColor(.secondary)
+                        }.frame(width: 86, alignment: .trailing)
+                        HStack(spacing: 2) {
+                            Image(systemName: item.dailyChange >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.system(size: 7))
+                            Text(formatPct(item.dailyChange)).font(.system(size: 11, weight: .bold))
+                        }.foregroundColor(item.dailyChange >= 0 ? .green : .red).frame(width: 60, alignment: .trailing)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text((item.totalProfit >= 0 ? "+" : "") + formatTL(item.totalProfit))
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(item.totalProfit >= 0 ? .green : .red)
+                            Text(formatPct(item.profitPercentage)).font(.system(size: 10)).foregroundColor(.secondary)
+                        }.frame(width: 96, alignment: .trailing).padding(.trailing, 16)
+                    }
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSelectStock(sItem)
+                    }
+                    if idx < portfolio.count - 1 { Divider().padding(.horizontal, 16) }
                 }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelectStock(sItem)
-                }
-                if idx < portfolio.count - 1 { Divider().padding(.horizontal, 16) }
             }
         }
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
@@ -1036,10 +1326,15 @@ struct StocksSpecialView: View {
         }.sorted(by: { $0.name < $1.name })
     }
 
+    private var allActiveLots: [ProcessedFinanceLot] {
+        processedLots.filter { $0.type.hasPrefix("AL") && $0.calculatedRemaining > 0 }
+    }
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 0) {
+                    spHLeading("HISSE", 80)
                     spH("T%", 52); spH("G%", 52); spH("G.KAZANC", 88)
                     spH("YATIRILAN", 96); spH("NET KAZANC", 96)
                     spH("GIRIS TAR.", 90); spH("GUN", 52)
@@ -1068,7 +1363,17 @@ struct StocksSpecialView: View {
                             }
                         Divider()
                     }
-                    Spacer().frame(height: 16)
+
+                    // Group Summary Row (web projesindeki gibi gruplama altı ortalamalar ve toplamlar)
+                    specialGroupSummaryRow(group.lots)
+                    Divider()
+
+                    Spacer().frame(height: 12)
+                }
+
+                // Global Grand Total Row (web projesindeki gibi en alttaki TOPLAM)
+                if !allActiveLots.isEmpty {
+                    specialGrandTotalRow(allActiveLots)
                 }
             }
         }
@@ -1083,6 +1388,7 @@ struct StocksSpecialView: View {
         let stock = stocks.first(where: { $0.id == lot.stockId })
         let cp = stock?.currentPrice ?? 0
         let pp = stock?.previousPrice ?? 0
+        let dailyChangePrice = cp - pp
         let qty = lot.calculatedRemaining
         let invested = qty * lot.price
         let grossP = qty * (cp - lot.price)
@@ -1090,19 +1396,209 @@ struct StocksSpecialView: View {
         let netP = grossP - taxD
         let tPerc = lot.price > 0 ? ((cp - lot.price) / lot.price) * 100 : 0.0
         let gPerc = pp > 0 ? ((cp - pp) / pp) * 100 : 0.0
+        let dailyP = qty * dailyChangePrice
         let dur = dateFromString(lot.date).map { max(0, Calendar.current.dateComponents([.day], from: $0, to: Date()).day ?? 0) } ?? 0
+        let stockName = stock?.name ?? lot.stockId
 
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
+            spTxtLeading(stockName, 80)
             spPct(tPerc, 52); spPct(gPerc, 52)
-            spCur(grossP, 88, col: true); spCur(invested, 96, col: false)
-            spCur(netP, 96, col: true)
+            spCur(dailyP, 88, col: true)
+            spCur(invested, 96, col: false)
+            spCurWithTax(netP, taxD, 96)
             spTxt(fmtDateShort(lot.date), 90)
-            spTxt("\(dur)g", 52)
+            spTxt("\(dur)", 52)
             spTxt(formatQty(qty), 72)
             spCur(lot.price, 86, col: false)
             spCur(cp, 94, col: false)
         }
         .padding(.vertical, 1)
+    }
+
+    private func calculateLotMetrics(_ lots: [ProcessedFinanceLot]) -> (dailyProfit: Double, invested: Double, netProfit: Double, taxDeduction: Double, totalDays: Int, totalQty: Double, avgTPerc: Double, avgGPerc: Double) {
+        var dailyProfit = 0.0
+        var invested = 0.0
+        var netProfit = 0.0
+        var taxDeduction = 0.0
+        var totalDays = 0
+        var totalQty = 0.0
+        var totalTPerc = 0.0
+        var totalGPerc = 0.0
+
+        for lot in lots {
+            let stock = stocks.first(where: { $0.id == lot.stockId })
+            let cp = stock?.currentPrice ?? 0
+            let pp = stock?.previousPrice ?? 0
+            let dChange = stock?.dailyChange ?? 0
+            let dailyChangePrice = cp - pp
+            let qty = lot.calculatedRemaining
+            let inv = qty * lot.price
+            let grossP = qty * (cp - lot.price)
+            let taxD = grossP > 0 ? (grossP * lot.taxRate / 100) : 0.0
+            let netP = grossP - taxD
+            let tPerc = lot.price > 0 ? ((cp - lot.price) / lot.price) * 100 : 0.0
+            let dailyP = qty * dailyChangePrice
+            let dur = dateFromString(lot.date).map { max(0, Calendar.current.dateComponents([.day], from: $0, to: Date()).day ?? 0) } ?? 0
+
+            dailyProfit += dailyP
+            invested += inv
+            netProfit += netP
+            taxDeduction += taxD
+            totalDays += dur
+            totalQty += qty
+            totalTPerc += tPerc
+            totalGPerc += dChange
+        }
+
+        let avgTPerc = lots.count > 0 ? (totalTPerc / Double(lots.count)) : 0.0
+        let avgGPerc = lots.count > 0 ? (totalGPerc / Double(lots.count)) : 0.0
+
+        return (dailyProfit, invested, netProfit, taxDeduction, totalDays, totalQty, avgTPerc, avgGPerc)
+    }
+
+    @ViewBuilder
+    private func specialGroupSummaryRow(_ groupLots: [ProcessedFinanceLot]) -> some View {
+        let (gDailyProfit, gInvested, gNetProfit, gTaxDeduction, gTotalDays, gTotalQty, gAvgTPerc, gAvgGPerc) = calculateLotMetrics(groupLots)
+        let gAvgDays = groupLots.count > 0 ? Int(round(Double(gTotalDays) / Double(groupLots.count))) : 0
+
+        HStack(spacing: 0) {
+            Text("")
+                .frame(width: 80, alignment: .leading)
+            
+            spPctBold(gAvgTPerc, 52)
+            spPctBold(gAvgGPerc, 52)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("G. KAZANÇ")
+                    .font(.system(size: 8, weight: .regular))
+                    .foregroundColor(.secondary.opacity(0.6))
+                Text((gDailyProfit >= 0 ? "+" : "") + formatTL(gDailyProfit))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(gDailyProfit >= 0 ? .green : .red)
+            }
+            .frame(width: 88, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("YATIRILAN")
+                    .font(.system(size: 8, weight: .regular))
+                    .foregroundColor(.secondary.opacity(0.6))
+                Text(formatTL(gInvested))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.primary)
+            }
+            .frame(width: 96, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("NET KAZANÇ")
+                    .font(.system(size: 8, weight: .regular))
+                    .foregroundColor(.secondary.opacity(0.6))
+                Text((gNetProfit >= 0 ? "+" : "") + formatTL(gNetProfit))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(gNetProfit >= 0 ? .green : .red)
+                if gTaxDeduction > 0 {
+                    Text("Stopaj: -" + formatTL(gTaxDeduction))
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+            }
+            .frame(width: 96, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+
+            Text("")
+                .frame(width: 90)
+
+            HStack(spacing: 2) {
+                Text("\(gAvgDays)")
+                    .font(.system(size: 11, weight: .bold))
+                Text("ort.")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 52, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+
+            Text(formatQty(gTotalQty))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.primary)
+                .frame(width: 72, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+
+            Text("")
+                .frame(width: 86)
+            Text("")
+                .frame(width: 94)
+        }
+        .background(Color.gray.opacity(0.08))
+    }
+
+    @ViewBuilder
+    private func specialGrandTotalRow(_ activeLots: [ProcessedFinanceLot]) -> some View {
+        let (totalDailyProfit, totalInvested, totalNetProfit, totalTaxDeduction, totalDaysCount, totalQty, _, _) = calculateLotMetrics(activeLots)
+        let globalAvgDays = activeLots.count > 0 ? Int(round(Double(totalDaysCount) / Double(activeLots.count))) : 0
+
+        HStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Text("TOPLAM:")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 132, alignment: .trailing).padding(.trailing, 6)
+
+            Text("")
+                .frame(width: 52)
+
+            Text((totalDailyProfit >= 0 ? "+" : "") + formatTL(totalDailyProfit))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(totalDailyProfit >= 0 ? .green : .red)
+                .frame(width: 88, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 8)
+
+            Text(formatTL(totalInvested))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.primary)
+                .frame(width: 96, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 8)
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text((totalNetProfit >= 0 ? "+" : "") + formatTL(totalNetProfit))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(totalNetProfit >= 0 ? .green : .red)
+                if totalTaxDeduction > 0 {
+                    Text("Stopaj: -" + formatTL(totalTaxDeduction))
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+            }
+            .frame(width: 96, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 8)
+
+            Text("")
+                .frame(width: 90)
+
+            HStack(spacing: 2) {
+                Text("\(globalAvgDays)")
+                    .font(.system(size: 11, weight: .bold))
+                Text("ort.")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 52, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 8)
+
+            Text(formatQty(totalQty))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.primary)
+                .frame(width: 72, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 8)
+
+            Text("")
+                .frame(width: 86)
+            Text("")
+                .frame(width: 94)
+        }
+        .background(Color.gray.opacity(0.14))
+    }
+
+    private func spHLeading(_ t: String, _ w: CGFloat) -> some View {
+        Text(t).font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
+            .frame(width: w, alignment: .leading).padding(.vertical, 8).padding(.leading, 12)
+    }
+    private func spTxtLeading(_ t: String, _ w: CGFloat) -> some View {
+        Text(t).font(.system(size: 11, weight: .bold)).foregroundColor(.blue)
+            .frame(width: w, alignment: .leading).padding(.leading, 12).padding(.vertical, 9).lineLimit(1)
     }
 
     private func spH(_ t: String, _ w: CGFloat) -> some View {
@@ -1114,10 +1610,28 @@ struct StocksSpecialView: View {
             .foregroundColor(v >= 0 ? .green : .red)
             .frame(width: w, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 9)
     }
+    private func spPctBold(_ v: Double, _ w: CGFloat) -> some View {
+        Text(formatPct(v)).font(.system(size: 11, weight: .bold))
+            .foregroundColor(v >= 0 ? .green : .red)
+            .frame(width: w, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 6)
+    }
     private func spCur(_ v: Double, _ w: CGFloat, col: Bool) -> some View {
-        Text(formatTL(v)).font(.system(size: 11, weight: .bold))
+        Text((col && v > 0 ? "+" : "") + formatTL(v)).font(.system(size: 11, weight: .bold))
             .foregroundColor(col ? (v >= 0 ? .green : .red) : .primary)
             .frame(width: w, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 9)
+    }
+    private func spCurWithTax(_ netP: Double, _ taxD: Double, _ w: CGFloat) -> some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text((netP >= 0 ? "+" : "") + formatTL(netP))
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(netP >= 0 ? .green : .red)
+            if taxD > 0 {
+                Text("Stopaj: -" + formatTL(taxD))
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(.red.opacity(0.8))
+            }
+        }
+        .frame(width: w, alignment: .trailing).padding(.trailing, 6).padding(.vertical, 4)
     }
     private func spTxt(_ t: String, _ w: CGFloat) -> some View {
         Text(t).font(.system(size: 11)).foregroundColor(.primary)
@@ -1181,7 +1695,18 @@ struct FinancePortfolioAnalysisSection: View {
                     profit: totalProfit, tax: totalTax, quantity: qty,
                     dailyGain: pItem?.dailyGain ?? 0, percentage: 0,
                     isActive: qty > 0, color: chartColors[i % chartColors.count])
-            }.sorted { ($0.isActive && !$1.isActive) || ($0.isActive == $1.isActive && $0.value > $1.value) }
+            }.sorted { item1, item2 in
+                if item1.isActive != item2.isActive {
+                    return item1.isActive
+                }
+                if item1.isActive {
+                    return item1.value > item2.value
+                } else {
+                    let date1 = processedLots.filter { $0.stockId == item1.id && !$0.type.hasPrefix("AL") }.map { $0.date }.max() ?? ""
+                    let date2 = processedLots.filter { $0.stockId == item2.id && !$0.type.hasPrefix("AL") }.map { $0.date }.max() ?? ""
+                    return date1 > date2
+                }
+            }
 
         case .kurumMevcut, .kurumGenel:
             let isGenel = layout == .kurumGenel
@@ -1304,12 +1829,6 @@ struct FinancePortfolioAnalysisSection: View {
                             ForEach(Array(displayedItems.enumerated()), id: \.1.id) { i, item in
                                 analysisRow(item, idx: i)
                                     .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if layout.isHisse {
-                                            let sItem = FinanceOperationsViewModel.shared.stocks.first(where: { $0.id == item.id }) ?? FinanceStockItem(id: item.id, name: item.name, currentPrice: item.value / max(1, item.quantity), previousPrice: 0, dailyChange: 0, updatedAt: nil, createdAt: nil)
-                                            onSelectStock(sItem)
-                                        }
-                                    }
                             }
 
                             if layout == .hisseGenel && itemsWithPct.count > 10 {
@@ -1468,6 +1987,8 @@ struct FinanceTransactionsSectionView: View {
     let onEdit: (ProcessedFinanceLot) -> Void
     let onDelete: (ProcessedFinanceLot) -> Void
 
+    @State private var lotToDelete: ProcessedFinanceLot? = nil
+
     private var visibleLots: [ProcessedFinanceLot] { Array(filteredLots.prefix(limitCount)) }
 
     var body: some View {
@@ -1512,7 +2033,7 @@ struct FinanceTransactionsSectionView: View {
                         .listRowBackground(Color.white)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) { // SwiftUI native swipeAction (Sağdan sola kaydırınca)
                             Button(role: .destructive) {
-                                onDelete(lot)
+                                lotToDelete = lot
                             } label: {
                                 Label("Sil", systemImage: "trash")
                             }
@@ -1530,6 +2051,20 @@ struct FinanceTransactionsSectionView: View {
                 .frame(height: CGFloat(visibleLots.count * 64)) // Düzgün boyutlandırma ve scroll çakışmasını engelleme
                 .background(Color.white)
                 .cornerRadius(14)
+                .alert("Islemi Sil", isPresented: Binding(
+                    get: { lotToDelete != nil },
+                    set: { if !$0 { lotToDelete = nil } }
+                )) {
+                    Button("Iptal", role: .cancel) { lotToDelete = nil }
+                    Button("Sil", role: .destructive) {
+                        if let lot = lotToDelete {
+                            onDelete(lot)
+                        }
+                        lotToDelete = nil
+                    }
+                } message: {
+                    Text("Bu islemi silmek istediginize emin misiniz?")
+                }
                 .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
                 .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
                 .padding(.horizontal, 16)
@@ -1599,7 +2134,7 @@ struct TxRow: View {
                     Text(formatTL(lot.price, decimals: 4)).font(.system(size: 12, weight: .semibold))
                 }
                 if lot.taxRate > 0 {
-                    Text("Stopaj: %" + String(format: "%.0f", lot.taxRate)).font(.system(size: 11)).foregroundColor(.orange)
+                    Text("Stopaj: %" + formatPctNoSymbol(lot.taxRate)).font(.system(size: 11)).foregroundColor(.orange)
                 }
                 if !lot.type.hasPrefix("AL") && lot.totalProfit != 0 {
                     Text((lot.totalProfit >= 0 ? "+" : "") + formatTL(lot.totalProfit))
@@ -1623,12 +2158,13 @@ struct FinanceAddEditSheet: View {
     let institutions: [FinanceInstitutionItem]
     let stocks: [FinanceStockItem]
     let portfolio: [PortfolioItem]
+    let allTransactions: [FinanceTransactionItem]
     let onSave: (String, String, String, Double, Double, Double, String) -> Void
 
     @Environment(\.dismiss) var dismiss
     @State private var selectedInstId: String = ""
     @State private var selectedStockId: String = ""
-    @State private var type: String = "ALIS"
+    @State private var type: String = "ALIŞ"
     @State private var quantityStr: String = ""
     @State private var priceStr: String = ""
     @State private var taxRateStr: String = "0"
@@ -1646,6 +2182,63 @@ struct FinanceAddEditSheet: View {
         let active = stocks.filter { activeIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
         let others = stocks.filter { !activeIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
         return active + others
+    }
+
+    private func calculateSellTaxAndProfit(stockId: String, instId: String, qty: Double, price: Double, formTaxRate: Double) -> (tax: Double, profit: Double) {
+        let editingId = transaction?.id
+        let sortedTrans = allTransactions.filter { !$0.deleted && $0.id != editingId }.sorted {
+            if $0.date != $1.date { return $0.date < $1.date }
+            let isAlis0 = $0.type.uppercased().hasPrefix("AL")
+            let isAlis1 = $1.type.uppercased().hasPrefix("AL")
+            if isAlis0 != isAlis1 { return isAlis0 }
+            return ($0.createdAt ?? Date.distantPast) < ($1.createdAt ?? Date.distantPast)
+        }
+        
+        struct TempLot { var remaining: Double; var price: Double; var taxRate: Double }
+        var buyLots: [TempLot] = []
+        
+        for t in sortedTrans {
+            if t.stockId == stockId && (instId.isEmpty || t.institutionId == instId) {
+                if t.type.uppercased().hasPrefix("AL") {
+                    buyLots.append(TempLot(remaining: t.quantity, price: t.price, taxRate: t.taxRate))
+                } else {
+                    var rem = t.quantity
+                    for i in 0..<buyLots.count {
+                        if rem <= 0 { break }
+                        if buyLots[i].remaining <= 0 { continue }
+                        let sell = min(buyLots[i].remaining, rem)
+                        buyLots[i].remaining -= sell
+                        rem -= sell
+                    }
+                }
+            }
+        }
+        
+        var remainingToSell = qty
+        var totalTax = 0.0
+        var totalGrossProfit = 0.0
+        
+        for lot in buyLots {
+            if remainingToSell <= 0 { break }
+            if lot.remaining <= 0 { continue }
+            let sellCount = min(lot.remaining, remainingToSell)
+            let profit = (price - lot.price) * sellCount
+            totalGrossProfit += profit
+            if profit > 0 && lot.taxRate > 0 {
+                totalTax += profit * (lot.taxRate / 100.0)
+            }
+            remainingToSell -= sellCount
+        }
+        
+        if totalTax == 0 && formTaxRate > 0 {
+            if totalGrossProfit > 0 {
+                totalTax = totalGrossProfit * (formTaxRate / 100.0)
+            } else {
+                totalTax = (qty * price) * (formTaxRate / 100.0)
+            }
+        }
+        
+        return (tax: totalTax, profit: totalGrossProfit)
     }
 
     var body: some View {
@@ -1700,8 +2293,8 @@ struct FinanceAddEditSheet: View {
                     }
 
                     Picker("Islem Turu", selection: $type) {
-                        Text("ALIS").tag("ALIS")
-                        Text("SATIS").tag("SATIS")
+                        Text("ALIŞ").tag("ALIŞ")
+                        Text("SATIŞ").tag("SATIŞ")
                     }.pickerStyle(.segmented)
 
                     DatePicker("Tarih", selection: $date, displayedComponents: .date)
@@ -1728,29 +2321,74 @@ struct FinanceAddEditSheet: View {
 
                 if let qty = parsedQty, let prc = parsedPrice, qty > 0 && prc > 0 {
                     Section("Ozet") {
-                        HStack {
-                            Text("Toplam Tutar")
-                            Spacer()
-                            Text(formatTL(qty * prc)).fontWeight(.bold)
-                        }
-                        if parsedTax > 0 {
+                        let isAlis = type.uppercased().hasPrefix("AL")
+                        if isAlis {
                             HStack {
-                                Text("Stopaj Kesintisi")
+                                Text("Toplam Tutar")
                                 Spacer()
-                                Text("-" + formatTL(qty * prc * (parsedTax / 100), decimals: 2)).foregroundColor(.red)
+                                Text(formatTL(qty * prc)).fontWeight(.bold)
                             }
-                        }
-                        HStack {
-                            Text("Net Tutar")
-                            Spacer()
-                            Text(formatTL(qty * prc * (1 - parsedTax / 100))).fontWeight(.bold).foregroundColor(.green)
-                        }
-                        if let s = selectedStock, s.currentPrice > 0 && prc != s.currentPrice {
-                            let diff = prc - s.currentPrice
+                            if parsedTax > 0 {
+                                HStack {
+                                    Text("Gelecek Stopaj Oran\u{131}")
+                                    Spacer()
+                                    Text("%" + formatPctNoSymbol(parsedTax)).foregroundColor(.orange).fontWeight(.medium)
+                                }
+                            }
+                            if let s = selectedStock, s.currentPrice > 0 && prc != s.currentPrice {
+                                let diff = prc - s.currentPrice
+                                HStack {
+                                    Text("Piyasa Fark\u{131}").foregroundColor(.orange)
+                                    Spacer()
+                                    Text((diff >= 0 ? "+" : "") + formatTL(diff, decimals: 4)).foregroundColor(.orange)
+                                }
+                            }
+                        } else {
+                            let grossTotal = qty * prc
+                            let (estimatedTax, estimatedProfit) = calculateSellTaxAndProfit(
+                                stockId: selectedStockId,
+                                instId: selectedInstId,
+                                qty: qty,
+                                price: prc,
+                                formTaxRate: parsedTax
+                            )
+                            
                             HStack {
-                                Text("Piyasa Farkli").foregroundColor(.orange)
+                                Text("Toplam Sat\u{131}\u{15F} Tutar\u{131}")
                                 Spacer()
-                                Text((diff >= 0 ? "+" : "") + formatTL(diff, decimals: 4)).foregroundColor(.orange)
+                                Text(formatTL(grossTotal)).fontWeight(.bold)
+                            }
+                            
+                            if estimatedProfit > 0 {
+                                HStack {
+                                    Text("Tahmini Br\u{FC}t Kazanc\u{131}")
+                                    Spacer()
+                                    Text("+" + formatTL(estimatedProfit)).foregroundColor(.blue).fontWeight(.semibold)
+                                }
+                            }
+                            
+                            if estimatedTax > 0 {
+                                HStack {
+                                    Text("Stopaj Kesintisi")
+                                    Spacer()
+                                    Text("-" + formatTL(estimatedTax, decimals: 2)).foregroundColor(.red).fontWeight(.bold)
+                                }
+                            }
+                            
+                            let netAmount = grossTotal - estimatedTax
+                            HStack {
+                                Text("Net Elime Ge\u{E7}ecek Tutar")
+                                Spacer()
+                                Text(formatTL(netAmount)).fontWeight(.bold).foregroundColor(.green)
+                            }
+                            
+                            if let s = selectedStock, s.currentPrice > 0 && prc != s.currentPrice {
+                                let diff = prc - s.currentPrice
+                                HStack {
+                                    Text("Piyasa Fark\u{131}").foregroundColor(.orange)
+                                    Spacer()
+                                    Text((diff >= 0 ? "+" : "") + formatTL(diff, decimals: 4)).foregroundColor(.orange)
+                                }
                             }
                         }
                     }
@@ -1773,7 +2411,8 @@ struct FinanceAddEditSheet: View {
             .onAppear {
                 if let t = transaction {
                     selectedInstId = t.institutionId; selectedStockId = t.stockId
-                    type = t.type; quantityStr = fmtN(t.quantity, dec: 4)
+                    type = t.type.uppercased().hasPrefix("AL") ? "ALIŞ" : "SATIŞ"
+                    quantityStr = fmtN(t.quantity, dec: 4)
                     priceStr = fmtN(t.price, dec: 4); taxRateStr = fmtN(t.taxRate, dec: 2)
                     if let d = dateFromString(t.date) { date = d }
                 } else if !institutions.isEmpty { selectedInstId = institutions[0].id }
@@ -1802,6 +2441,40 @@ struct FinanceStockPriceEditSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var priceStr: String = ""
 
+    private var changePercentage: Double? {
+        let clean = priceStr.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+        guard let newPrice = Double(clean) ?? Double(priceStr), stock.currentPrice > 0 else { return nil }
+        return ((newPrice - stock.currentPrice) / stock.currentPrice) * 100
+    }
+
+    private func formatChangePct(_ val: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "tr_TR")
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        let formatted = formatter.string(from: NSNumber(value: val)) ?? "0,00"
+        return val >= 0 ? "+\(formatted)%" : "\(formatted)%"
+    }
+
+    private func formatTL(_ val: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "tr_TR")
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 4
+        return (formatter.string(from: NSNumber(value: val)) ?? "\(val)") + " TL"
+    }
+
+    private func pasteFromClipboard() {
+        if let clipboardText = UIPasteboard.general.string {
+            let clean = clipboardText.replacingOccurrences(of: "[^0-9,.]", with: "", options: .regularExpression)
+            if !clean.isEmpty {
+                priceStr = clean
+            }
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -1816,26 +2489,96 @@ struct FinanceStockPriceEditSheet: View {
                             .foregroundColor(.primary)
                     }
                     .padding(.vertical, 4)
-                }
-                
-                Section("GUNCEL FIYAT") {
+                    
                     HStack {
-                        Text("Fiyat (TL)")
+                        Text("Önceki Fiyat")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.secondary)
                         Spacer()
-                        TextField("0,00", text: $priceStr)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .font(.system(size: 16, weight: .semibold))
+                        Text(formatTL(stock.currentPrice))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 4)
+
+                    if stock.previousPrice > 0 {
+                        HStack {
+                            Text("Önceki Gün Fiyatı")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formatTL(stock.previousPrice))
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    if let updatedAt = stock.updatedAt {
+                        HStack {
+                            Text("Son Güncelleme")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(trDateFormatter.string(from: updatedAt))
+                                .font(.system(size: 14))
+                                .foregroundColor(.primary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                
+                Section("GÜNCEL FİYAT") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Fiyat (TL)")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            TextField("0,00", text: $priceStr)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        
+                        if let pct = changePercentage {
+                            HStack {
+                                Text("Değişim Oranı")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    Image(systemName: pct >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                                        .font(.system(size: 10))
+                                    Text(formatChangePct(pct))
+                                        .font(.system(size: 13, weight: .bold))
+                                }
+                                .foregroundColor(pct >= 0 ? .green : .red)
+                            }
+                        }
+
+                        Button(action: pasteFromClipboard) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "doc.on.clipboard")
+                                    .font(.system(size: 14, weight: .medium))
+                                Text("Panodan Yapıştır")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundColor(.blue)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
                     }
                     .padding(.vertical, 4)
                 }
             }
-            .navigationTitle("Hisse Duzenle")
+            .navigationTitle("Hisse Düzenle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Iptal") { dismiss() }
+                    Button("İptal") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {

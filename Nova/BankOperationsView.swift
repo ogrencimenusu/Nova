@@ -88,6 +88,17 @@ class BankOperationsViewModel: ObservableObject {
         loadAllData()
     }
     
+    func clearCacheAndReload() {
+        removeListeners()
+        hasStarted = false
+        let db = Firestore.firestore()
+        db.clearPersistence { _ in
+            DispatchQueue.main.async {
+                self.startListeningIfNeeded()
+            }
+        }
+    }
+    
     func loadAllData() {
         guard let user = Auth.auth().currentUser else { return }
         
@@ -180,8 +191,21 @@ class BankOperationsViewModel: ObservableObject {
                     let amount = parseAmountDouble(data["amount"])
                     let date = data["date"] as? String ?? ""
                     let receiptUrl = data["receiptUrl"] as? String
+                    let createdAtVal = parseFirestoreDate(data["createdAt"])
                     
-                    list.append(BankTransactionItem(id: doc.documentID, bankId: bankId, title: title, quickActions: qas, type: type, amount: amount, date: date, deleted: deleted, receiptUrl: receiptUrl))
+                    list.append(BankTransactionItem(id: doc.documentID, bankId: bankId, title: title, quickActions: qas, type: type, amount: amount, date: date, createdAt: createdAtVal, deleted: deleted, receiptUrl: receiptUrl))
+                }
+                
+                list.sort { a, b in
+                    if a.date != b.date {
+                        return a.date > b.date
+                    }
+                    let dateA = a.createdAt ?? Date.distantFuture
+                    let dateB = b.createdAt ?? Date.distantFuture
+                    if dateA != dateB {
+                        return dateA > dateB
+                    }
+                    return a.id > b.id
                 }
                 
                 DispatchQueue.main.async {
@@ -241,6 +265,9 @@ class BankOperationsViewModel: ObservableObject {
             }
             let bal = activeTrans.reduce(0.0) { $0 + $1.amount }
             banks[i].balance = bal
+        }
+        if let user = Auth.auth().currentUser {
+            AccountSummaryHelper.shared.resyncAllBankSummaries(uid: user.uid, banks: self.banks, transactions: self.transactions)
         }
     }
     
@@ -351,11 +378,22 @@ class BankOperationsViewModel: ObservableObject {
             "createdAt": FieldValue.serverTimestamp(),
             "deleted": false
         ])
+        
+        let numAmount = parseAmount(amount)
+        if numAmount != 0 {
+            AccountSummaryHelper.shared.updateBankTransactionSummary(uid: user.uid, bankId: bankId, amountDelta: numAmount)
+        }
     }
     
     func updateTransaction(id: String, bankId: String, title: String, quickActions: [String], type: String, amount: String, date: String, receiptUrl: String) {
         guard let user = Auth.auth().currentUser else { return }
         let db = Firestore.firestore()
+        
+        let oldTrans = transactions.first(where: { $0.id == id })
+        let oldAmount = oldTrans != nil ? parseAmount(oldTrans!.amount) : 0.0
+        let oldBankId = oldTrans?.bankId ?? bankId
+        let newAmount = parseAmount(amount)
+        
         db.collection("users").document(user.uid).collection("bankTransactions").document(id).updateData([
             "bankId": bankId,
             "title": title,
@@ -365,17 +403,40 @@ class BankOperationsViewModel: ObservableObject {
             "date": date,
             "receiptUrl": receiptUrl
         ])
+        
+        if oldBankId == bankId {
+            let delta = newAmount - oldAmount
+            if delta != 0 {
+                AccountSummaryHelper.shared.updateBankTransactionSummary(uid: user.uid, bankId: bankId, amountDelta: delta)
+            }
+        } else {
+            if oldAmount != 0 {
+                AccountSummaryHelper.shared.updateBankTransactionSummary(uid: user.uid, bankId: oldBankId, amountDelta: -1.0 * oldAmount)
+            }
+            if newAmount != 0 {
+                AccountSummaryHelper.shared.updateBankTransactionSummary(uid: user.uid, bankId: bankId, amountDelta: newAmount)
+            }
+        }
     }
     
     func deleteTransaction(id: String) {
         guard let user = Auth.auth().currentUser else { return }
         let db = Firestore.firestore()
+        
+        let oldTrans = transactions.first(where: { $0.id == id })
+        let oldAmount = oldTrans != nil ? parseAmount(oldTrans!.amount) : 0.0
+        let oldBankId = oldTrans?.bankId ?? ""
+        
         db.collection("users").document(user.uid).collection("bankTransactions").document(id).updateData([
             "deleted": true
         ])
+        
+        if !oldBankId.isEmpty && oldAmount != 0 {
+            AccountSummaryHelper.shared.updateBankTransactionSummary(uid: user.uid, bankId: oldBankId, amountDelta: -1.0 * oldAmount)
+        }
     }
     
-    func addQuickTransactionInGroup(groupId: String) {
+    func addQuickTransactionInGroup(groupId: String, lastTransaction: BankTransactionItem? = nil) {
         guard let user = Auth.auth().currentUser else { return }
         let db = Firestore.firestore()
         let today = DateFormatter()
@@ -388,14 +449,20 @@ class BankOperationsViewModel: ObservableObject {
         
         if selectedGroupBy == "bankId" {
             bankId = groupId
+            typeId = lastTransaction?.type ?? (transactionTypes.first?.id ?? "")
+            quickActions = lastTransaction?.quickActions ?? []
         } else if selectedGroupBy == "type" {
             typeId = groupId
-            bankId = banks.first?.id ?? ""
+            bankId = lastTransaction?.bankId ?? (banks.first?.id ?? "")
+            quickActions = lastTransaction?.quickActions ?? []
         } else if selectedGroupBy == "quickActions" {
             quickActions = [groupId]
-            bankId = banks.first?.id ?? ""
+            bankId = lastTransaction?.bankId ?? (banks.first?.id ?? "")
+            typeId = lastTransaction?.type ?? (transactionTypes.first?.id ?? "")
         } else {
-            bankId = banks.first?.id ?? ""
+            bankId = lastTransaction?.bankId ?? (banks.first?.id ?? "")
+            typeId = lastTransaction?.type ?? (transactionTypes.first?.id ?? "")
+            quickActions = lastTransaction?.quickActions ?? []
         }
         
         db.collection("users").document(user.uid).collection("bankTransactions").addDocument(data: [
@@ -419,9 +486,37 @@ struct BankOperationsView: View {
     
     // UI Filters & Search
     @State private var searchText: String = ""
-    @State private var startDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-    @State private var endDate: Date = Date()
-    @State private var showDateFilter: Bool = false
+    @State private var isDateFilterEnabled: Bool = false
+    @State private var filterStartDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var filterEndDate: Date = Date()
+    
+    @State private var filterTitleText: String = ""
+    @State private var filterTitleOp: String = "contains" // "contains" or "notContains"
+    
+    @State private var selectedQuickActionIds: Set<String> = []
+    @State private var selectedTypeIds: Set<String> = []
+    @State private var selectedBankIds: Set<String> = []
+    
+    @State private var showFilterSheet: Bool = false
+    
+    private var isAnyFilterActive: Bool {
+        isDateFilterEnabled ||
+        !filterTitleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !selectedQuickActionIds.isEmpty ||
+        !selectedTypeIds.isEmpty ||
+        !selectedBankIds.isEmpty
+    }
+    
+    private func resetFilters() {
+        isDateFilterEnabled = false
+        filterStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+        filterEndDate = Date()
+        filterTitleText = ""
+        filterTitleOp = "contains"
+        selectedQuickActionIds = []
+        selectedTypeIds = []
+        selectedBankIds = []
+    }
     
     // Pagination (Limit Count)
     @State private var limitCount: Int = 5
@@ -435,7 +530,7 @@ struct BankOperationsView: View {
     @State private var editingTransaction: BankTransactionItem? = nil
     @State private var isAddTransactionPresented: Bool = false
     
-    // Left-to-right Swipe Alert Confirmation
+    // Right-to-left Swipe Alert Confirmation
     @State private var transactionToDelete: BankTransactionItem? = nil
     
     var body: some View {
@@ -459,6 +554,31 @@ struct BankOperationsView: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
+                            
+                            // Standard Page Title Header with Glass Plus Button
+                            HStack(alignment: .center) {
+                                Text("Banka")
+                                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                                    .foregroundColor(.primary)
+                                
+                                Spacer()
+                                
+                                Button(action: { isAddTransactionPresented = true }) {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.primary)
+                                        .frame(width: 36, height: 36)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Circle())
+                                        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                                        )
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
                             
                             // MARK: - Bank Cards horizontal slider
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -500,42 +620,43 @@ struct BankOperationsView: View {
                             }
                             .padding(.top, 8)
                             
-                            // Date Range Picker Drawer
-                            if showDateFilter {
-                                VStack(spacing: 8) {
-                                    DatePicker("Başlangıç", selection: $startDate, displayedComponents: .date)
-                                        .datePickerStyle(CompactDatePickerStyle())
-                                        .environment(\.locale, Locale(identifier: "tr_TR"))
-                                    DatePicker("Bitiş", selection: $endDate, displayedComponents: .date)
-                                        .datePickerStyle(CompactDatePickerStyle())
-                                        .environment(\.locale, Locale(identifier: "tr_TR"))
-                                }
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .padding(.horizontal, 16)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                            
-                            // MARK: - Bank Transactions List Title & Section Date Filter
+                            // MARK: - Bank Transactions List Title & Section Filter Button
                             HStack {
                                 Text("Banka İşlemleri")
                                     .font(.system(size: 18, weight: .bold, design: .rounded))
                                     .foregroundColor(.black.opacity(0.8))
                                 Spacer()
                                 
-                                Button(action: { withAnimation { showDateFilter.toggle() } }) {
-                                    Image(systemName: showDateFilter ? "calendar.badge.minus" : "calendar.badge.plus")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundColor(showDateFilter ? .white : .blue)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 6)
-                                        .background(showDateFilter ? Color.blue : Color.white)
-                                        .cornerRadius(8)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(Color.blue.opacity(0.15), lineWidth: 1)
-                                        )
+                                Button(action: { showFilterSheet = true }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: isAnyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                                        Text("Filtrele")
+                                            .font(.system(size: 12, weight: .bold))
+                                        if isAnyFilterActive {
+                                            let activeCount = (isDateFilterEnabled ? 1 : 0) +
+                                                (filterTitleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0 : 1) +
+                                                selectedQuickActionIds.count +
+                                                selectedTypeIds.count +
+                                                selectedBankIds.count
+                                            Text("\(activeCount)")
+                                                .font(.system(size: 10, weight: .bold))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.white)
+                                                .foregroundColor(.blue)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(isAnyFilterActive ? .white : .blue)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(isAnyFilterActive ? Color.blue : Color.white)
+                                    .cornerRadius(8)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                                    )
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -711,33 +832,7 @@ struct BankOperationsView: View {
                     }
                 }
             }
-            .navigationTitle("Banka")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                
-                // Search Field and "+" Button
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.gray)
-                                .font(.system(size: 11))
-                            TextField("Ara...", text: $searchText)
-                                .font(.system(size: 12))
-                                .frame(width: 90)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.8))
-                        .cornerRadius(8)
-                        
-                        Button(action: { isAddTransactionPresented = true }) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 16, weight: .bold))
-                        }
-                    }
-                }
-            }
+            .navigationBarHidden(true)
             .onAppear {
                 viewModel.startListeningIfNeeded()
             }
@@ -793,12 +888,32 @@ struct BankOperationsView: View {
                     }
                 )
             }
+            // Advanced Filter Sheet
+            .sheet(isPresented: $showFilterSheet) {
+                let uniqueTitles = Array(Set(viewModel.transactions.map { $0.title }.filter { !$0.isEmpty })).sorted()
+                BankFilterSheetView(
+                    isDateFilterEnabled: $isDateFilterEnabled,
+                    filterStartDate: $filterStartDate,
+                    filterEndDate: $filterEndDate,
+                    filterTitleText: $filterTitleText,
+                    filterTitleOp: $filterTitleOp,
+                    selectedQuickActionIds: $selectedQuickActionIds,
+                    selectedTypeIds: $selectedTypeIds,
+                    selectedBankIds: $selectedBankIds,
+                    banks: viewModel.banks,
+                    types: viewModel.transactionTypes,
+                    quickActions: viewModel.quickActions,
+                    uniqueTitles: uniqueTitles,
+                    matchingCount: filterTransactions(viewModel.transactions).count,
+                    onReset: resetFilters
+                )
+            }
             // In-app Safari sheet to display Google Drive PDFs/receipts safely inside the app as a fallback
             .sheet(item: $activeSafariURL) { wrapper in
                 SafariView(url: wrapper.url)
                     .edgesIgnoringSafeArea(.all)
             }
-            // Left-to-right swipe delete dialog alert
+            // Right-to-left swipe delete dialog alert
             .alert(item: $transactionToDelete) { trans in
                 Alert(
                     title: Text("İşlemi Sil"),
@@ -826,23 +941,65 @@ struct BankOperationsView: View {
     // MARK: - Search & Date Range Filters
     
     private func filterTransactions(_ source: [BankTransactionItem]) -> [BankTransactionItem] {
-        return source.filter { t in
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let startStr = isDateFilterEnabled ? formatter.string(from: filterStartDate) : ""
+        let endStr = isDateFilterEnabled ? formatter.string(from: filterEndDate) : ""
+        let trimmedTitleFilter = filterTitleText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let filtered = source.filter { t in
+            // Search text from top bar search input
             if !searchText.isEmpty {
                 let match = t.title.localizedCaseInsensitiveContains(searchText)
                 if !match { return false }
             }
-            if showDateFilter {
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd"
-                if let tDate = formatter.date(from: t.date) {
-                    let startOfStartDate = Calendar.current.startOfDay(for: startDate)
-                    let endOfEndDate = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: endDate) ?? endDate
-                    if tDate < startOfStartDate || tDate > endOfEndDate {
-                        return false
-                    }
+            
+            // 1. Date Range Filter (Fast string comparison)
+            if isDateFilterEnabled {
+                if t.date < startStr || t.date > endStr {
+                    return false
                 }
             }
+            
+            // 2. Title Filter (contains / notContains)
+            if !trimmedTitleFilter.isEmpty {
+                let match = t.title.localizedCaseInsensitiveContains(trimmedTitleFilter)
+                if filterTitleOp == "contains" {
+                    if !match { return false }
+                } else if filterTitleOp == "notContains" {
+                    if match { return false }
+                }
+            }
+            
+            // 3. Quick Actions Filter
+            if !selectedQuickActionIds.isEmpty {
+                let hasAnyQA = t.quickActions.contains { selectedQuickActionIds.contains($0) }
+                if !hasAnyQA { return false }
+            }
+            
+            // 4. Transaction Type Filter
+            if !selectedTypeIds.isEmpty {
+                if !selectedTypeIds.contains(t.type) { return false }
+            }
+            
+            // 5. Bank Filter
+            if !selectedBankIds.isEmpty {
+                if !selectedBankIds.contains(t.bankId) { return false }
+            }
+            
             return true
+        }
+        
+        return filtered.sorted { a, b in
+            if a.date != b.date {
+                return a.date > b.date
+            }
+            let dateA = a.createdAt ?? Date.distantFuture
+            let dateB = b.createdAt ?? Date.distantFuture
+            if dateA != dateB {
+                return dateA > dateB
+            }
+            return a.id > b.id
         }
     }
     
@@ -889,7 +1046,18 @@ struct BankOperationsView: View {
                 }
             }
             
-            groups.append(TransactionGroup(id: key, label: label, color: colorHex, items: items))
+            let sortedGroupItems = items.sorted { a, b in
+                if a.date != b.date {
+                    return a.date > b.date
+                }
+                let dateA = a.createdAt ?? Date.distantFuture
+                let dateB = b.createdAt ?? Date.distantFuture
+                if dateA != dateB {
+                    return dateA > dateB
+                }
+                return a.id > b.id
+            }
+            groups.append(TransactionGroup(id: key, label: label, color: colorHex, items: sortedGroupItems))
         }
         
         let customOrder = viewModel.groupSettings[viewModel.selectedGroupBy]?["order"] as? [String] ?? []
@@ -971,10 +1139,11 @@ struct TransactionRowView: View {
     @State private var isSwiped: Bool = false
     
     var body: some View {
-        ZStack(alignment: .leading) {
-            // Delete button background on swipe (underneath, left side)
-            if offset > 0 {
+        ZStack(alignment: .trailing) {
+            // Delete button background on swipe (underneath, right side)
+            if offset < 0 {
                 HStack {
+                    Spacer()
                     Button(action: {
                         withAnimation {
                             offset = 0
@@ -991,7 +1160,6 @@ struct TransactionRowView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .frame(width: 70)
-                    Spacer()
                 }
                 .transition(.opacity)
             }
@@ -1095,15 +1263,15 @@ struct TransactionRowView: View {
                     .onChanged { value in
                         // Only track horizontal swipes to allow vertical ScrollView gestures
                         if abs(value.translation.width) > abs(value.translation.height) {
-                            if value.translation.width > 0 {
+                            if value.translation.width < 0 {
                                 offset = value.translation.width
                             }
                         }
                     }
                     .onEnded { value in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7, blendDuration: 0)) {
-                            if value.translation.width > 60 && abs(value.translation.width) > abs(value.translation.height) {
-                                offset = 80
+                            if value.translation.width < -60 && abs(value.translation.width) > abs(value.translation.height) {
+                                offset = -80
                                 isSwiped = true
                             } else {
                                 offset = 0
@@ -1164,7 +1332,8 @@ struct GroupSectionView: View {
                 }
                 
                 Button(action: {
-                    viewModel.addQuickTransactionInGroup(groupId: group.id)
+                    let lastItem = filterLocalGroupItems().first ?? group.items.first
+                    viewModel.addQuickTransactionInGroup(groupId: group.id, lastTransaction: lastItem)
                 }) {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
@@ -1336,16 +1505,27 @@ struct GroupSectionView: View {
     }
     
     private func filterLocalGroupItems() -> [BankTransactionItem] {
-        if !isLocalFilterEnabled {
-            return group.items
-        }
-        return group.items.filter { t in
+        var items = group.items
+        if isLocalFilterEnabled {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            guard let tDate = formatter.date(from: t.date) else { return false }
             let startOfStartDate = Calendar.current.startOfDay(for: localStartDate)
             let endOfEndDate = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: localEndDate) ?? localEndDate
-            return tDate >= startOfStartDate && tDate <= endOfEndDate
+            items = items.filter { t in
+                guard let tDate = formatter.date(from: t.date) else { return false }
+                return tDate >= startOfStartDate && tDate <= endOfEndDate
+            }
+        }
+        return items.sorted { a, b in
+            if a.date != b.date {
+                return a.date > b.date
+            }
+            let dateA = a.createdAt ?? Date.distantFuture
+            let dateB = b.createdAt ?? Date.distantFuture
+            if dateA != dateB {
+                return dateA > dateB
+            }
+            return a.id > b.id
         }
     }
 }
@@ -1609,8 +1789,8 @@ struct AddEditTransactionSheetView: View {
                     
                     Picker("Banka", selection: $selectedBankId) {
                         Text("Banka Seçin").tag("")
-                        ForEach(banks.filter { $0.visible }) { b in
-                            Text(b.name).tag(b.id)
+                        ForEach(banks) { b in
+                            Text(b.visible ? b.name : "\(b.name) (Gizli)").tag(b.id)
                         }
                     }
                     
@@ -1619,9 +1799,14 @@ struct AddEditTransactionSheetView: View {
                 }
                 
                 Section(header: Text("Tutar ve Kategoriler")) {
-                    // Turkish Lira formatted input with commas
+                    // Turkish Lira formatted input with numbers, minus sign and commas
                     TextField("Tutar (Örn: -9845,60)", text: $amountString)
                         .keyboardType(.numbersAndPunctuation)
+                        .onChange(of: amountString) { newValue in
+                            if newValue.contains(".") {
+                                amountString = newValue.replacingOccurrences(of: ".", with: ",")
+                            }
+                        }
                     
                     Picker("İşlem Türü", selection: $selectedTypeId) {
                         Text("Tür Seçin").tag("")
@@ -1742,7 +1927,7 @@ struct AddEditTransactionSheetView: View {
                     if let parsedDate = formatter.date(from: trans.date) {
                         selectedDate = parsedDate
                     }
-                } else if let firstBank = banks.first(where: { $0.visible })?.id {
+                } else if let firstBank = banks.first(where: { $0.visible })?.id ?? banks.first?.id {
                     selectedBankId = firstBank
                 }
             }
@@ -1792,34 +1977,48 @@ fileprivate func tagColorToHex(_ color: String) -> String {
 }
 
 fileprivate func parseAmountDouble(_ val: Any?) -> Double {
+    guard let val = val else { return 0.0 }
     if let doubleVal = val as? Double {
         return doubleVal
+    }
+    if let numVal = val as? NSNumber {
+        return numVal.doubleValue
     }
     if let intVal = val as? Int {
         return Double(intVal)
     }
     if let strVal = val as? String {
         let trimmed = strVal.trimmingCharacters(in: .whitespacesAndNewlines)
-        var cleanStr = trimmed
-        if trimmed.contains(",") {
-            cleanStr = trimmed.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+        if trimmed.isEmpty { return 0.0 }
+        
+        let isNegative = trimmed.hasPrefix("-")
+        var clean = trimmed.replacingOccurrences(of: "-", with: "")
+                           .replacingOccurrences(of: "+", with: "")
+                           .replacingOccurrences(of: "₺", with: "")
+                           .replacingOccurrences(of: "$", with: "")
+                           .replacingOccurrences(of: "€", with: "")
+                           .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if clean.contains(",") && clean.contains(".") {
+            if clean.lastIndex(of: ",")! > clean.lastIndex(of: ".")! {
+                clean = clean.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            } else {
+                clean = clean.replacingOccurrences(of: ",", with: "")
+            }
+        } else if clean.contains(",") {
+            clean = clean.replacingOccurrences(of: ",", with: ".")
+        } else if clean.contains(".") {
+            let components = clean.components(separatedBy: ".")
+            if components.count > 1 {
+                let lastComp = components.last ?? ""
+                if lastComp.count == 3 {
+                    clean = clean.replacingOccurrences(of: ".", with: "")
+                }
+            }
         }
         
-        var parsedStr = ""
-        var hasDecimalPoint = false
-        var isFirstChar = true
-        for char in cleanStr {
-            if char == "-" && isFirstChar {
-                parsedStr.append(char)
-            } else if char == "." && !hasDecimalPoint {
-                parsedStr.append(char)
-                hasDecimalPoint = true
-            } else if char.isNumber {
-                parsedStr.append(char)
-            }
-            isFirstChar = false
-        }
-        return Double(parsedStr) ?? 0.0
+        let res = Double(clean) ?? 0.0
+        return isNegative ? -res : res
     }
     return 0.0
 }
@@ -1844,4 +2043,349 @@ fileprivate func formatShortDate(_ dateStr: String) -> String {
     display.locale = Locale(identifier: "tr_TR")
     display.dateFormat = "d MMM yyyy"
     return display.string(from: date)
+}
+
+// MARK: - BankFilterSheetView
+
+struct BankFilterSheetView: View {
+    @Environment(\.dismiss) var dismiss
+    
+    @Binding var isDateFilterEnabled: Bool
+    @Binding var filterStartDate: Date
+    @Binding var filterEndDate: Date
+    
+    @Binding var filterTitleText: String
+    @Binding var filterTitleOp: String
+    
+    @Binding var selectedQuickActionIds: Set<String>
+    @Binding var selectedTypeIds: Set<String>
+    @Binding var selectedBankIds: Set<String>
+    
+    var banks: [BankItem]
+    var types: [TagItem]
+    var quickActions: [TagItem]
+    var uniqueTitles: [String]
+    var matchingCount: Int
+    var onReset: () -> Void
+    
+    // Expandable / Collapsible state for long categories (Default: Closed)
+    @State private var isQuickActionsExpanded: Bool = false
+    @State private var isTypesExpanded: Bool = false
+    
+    private var isAnyFilterActive: Bool {
+        isDateFilterEnabled ||
+        !filterTitleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !selectedQuickActionIds.isEmpty ||
+        !selectedTypeIds.isEmpty ||
+        !selectedBankIds.isEmpty
+    }
+    
+    private var filteredSuggestions: [String] {
+        let trimmedTitle = filterTitleText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: Locale(identifier: "tr_TR"))
+        if trimmedTitle.isEmpty { return [] }
+        return uniqueTitles.filter {
+            let suggestLower = $0.lowercased(with: Locale(identifier: "tr_TR"))
+            return suggestLower.contains(trimmedTitle) && suggestLower != trimmedTitle
+        }
+        .prefix(8)
+        .map { $0 }
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                // 1. Tarih Seçme ve İki Tarih Arası Seçme
+                Section(header: Text("Tarih Aralığı")) {
+                    Toggle("Tarih Filtresini Kullan", isOn: $isDateFilterEnabled)
+                    
+                    if isDateFilterEnabled {
+                        // Fast preset date range buttons
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                filterStartDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+                                filterEndDate = Date()
+                            }) {
+                                Text("1 Hafta")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.1))
+                                    .foregroundColor(.blue)
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Button(action: {
+                                filterStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+                                filterEndDate = Date()
+                            }) {
+                                Text("1 Ay")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.1))
+                                    .foregroundColor(.blue)
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Button(action: {
+                                let cal = Calendar.current
+                                filterStartDate = cal.date(from: cal.dateComponents([.year], from: Date())) ?? Date()
+                                filterEndDate = Date()
+                            }) {
+                                Text("Bu Yıl")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.1))
+                                    .foregroundColor(.blue)
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .padding(.vertical, 4)
+                        
+                        DatePicker("Başlangıç Tarihi", selection: $filterStartDate, displayedComponents: .date)
+                            .environment(\.locale, Locale(identifier: "tr_TR"))
+                        DatePicker("Bitiş Tarihi", selection: $filterEndDate, displayedComponents: .date)
+                            .environment(\.locale, Locale(identifier: "tr_TR"))
+                    }
+                }
+                
+                // 2. İşlem Adına Göre Getirme (contains, is not contains) & Otomatik Doldurma
+                Section(header: Text("İşlem Adı")) {
+                    Picker("Arama Tipi", selection: $filterTitleOp) {
+                        Text("İçerir").tag("contains")
+                        Text("İçermez").tag("notContains")
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.gray)
+                            TextField("İşlem adında ara...", text: $filterTitleText)
+                            if !filterTitleText.isEmpty {
+                                Button(action: { filterTitleText = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        
+                        if !filteredSuggestions.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(filteredSuggestions, id: \.self) { suggestion in
+                                        Button(action: {
+                                            filterTitleText = suggestion
+                                        }) {
+                                            Text(suggestion)
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Color.blue.opacity(0.08))
+                                                .foregroundColor(.blue)
+                                                .cornerRadius(8)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                }
+                
+                // 3. Hızlı İşlemlere Göre Getirme (Collapsible, Default: Closed)
+                Section {
+                    Button(action: {
+                        withAnimation { isQuickActionsExpanded.toggle() }
+                    }) {
+                        HStack {
+                            Text("Hızlı İşlemler")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            if !selectedQuickActionIds.isEmpty {
+                                Text("(\(selectedQuickActionIds.count) seçili)")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.blue)
+                            }
+                            Spacer()
+                            Image(systemName: isQuickActionsExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.gray)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    if isQuickActionsExpanded {
+                        if quickActions.isEmpty {
+                            Text("Kayıtlı hızlı işlem etiketi yok.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                        } else {
+                            ForEach(quickActions) { qa in
+                                Button(action: {
+                                    if selectedQuickActionIds.contains(qa.id) {
+                                        selectedQuickActionIds.remove(qa.id)
+                                    } else {
+                                        selectedQuickActionIds.insert(qa.id)
+                                    }
+                                }) {
+                                    HStack {
+                                        Circle()
+                                            .fill(Color(hex: tagColorToHex(qa.color)))
+                                            .frame(width: 10, height: 10)
+                                        Text(qa.name)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        if selectedQuickActionIds.contains(qa.id) {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                    }
+                }
+                
+                // 4. İşlem Türüne Göre Getirme (Collapsible, Default: Closed)
+                Section {
+                    Button(action: {
+                        withAnimation { isTypesExpanded.toggle() }
+                    }) {
+                        HStack {
+                            Text("İşlem Türü")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            if !selectedTypeIds.isEmpty {
+                                Text("(\(selectedTypeIds.count) seçili)")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.blue)
+                            }
+                            Spacer()
+                            Image(systemName: isTypesExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.gray)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    if isTypesExpanded {
+                        if types.isEmpty {
+                            Text("Kayıtlı işlem türü yok.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                        } else {
+                            ForEach(types) { t in
+                                Button(action: {
+                                    if selectedTypeIds.contains(t.id) {
+                                        selectedTypeIds.remove(t.id)
+                                    } else {
+                                        selectedTypeIds.insert(t.id)
+                                    }
+                                }) {
+                                    HStack {
+                                        Circle()
+                                            .fill(Color(hex: tagColorToHex(t.color)))
+                                            .frame(width: 10, height: 10)
+                                        Text(t.name)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        if selectedTypeIds.contains(t.id) {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundColor(.blue)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                    }
+                }
+                
+                // 5. Banka İsmine Göre Getirme
+                Section(header: Text("Banka İsmine Göre")) {
+                    let visibleBanks = banks.filter { $0.visible }
+                    if visibleBanks.isEmpty {
+                        Text("Kayıtlı görünür banka yok.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                    } else {
+                        ForEach(visibleBanks) { b in
+                            Button(action: {
+                                if selectedBankIds.contains(b.id) {
+                                    selectedBankIds.remove(b.id)
+                                } else {
+                                    selectedBankIds.insert(b.id)
+                                }
+                            }) {
+                                HStack {
+                                    if let logoName = getLocalLogoName(for: b.name) {
+                                        Image(logoName)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 22, height: 22)
+                                            .clipShape(Circle())
+                                    } else {
+                                        Image(systemName: "landmark.circle.fill")
+                                            .foregroundColor(.gray)
+                                            .frame(width: 22, height: 22)
+                                    }
+                                    Text(b.name)
+                                        .foregroundColor(.primary)
+                                    Spacer()
+                                    if selectedBankIds.contains(b.id) {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+            }
+            .navigationTitle("İşlem Filtreleri")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 10) {
+                        Text("\(matchingCount) İşlem")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(8)
+                        
+                        if isAnyFilterActive {
+                            Button(action: {
+                                onReset()
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

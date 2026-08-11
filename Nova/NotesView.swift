@@ -225,10 +225,10 @@ struct NotesView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Custom Navigation Bar (Title on left, Search & Stack buttons on right)
+                // Custom Navigation Bar (Title on left)
                 customNavBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
                     .padding(.bottom, 6)
                     .background(Color(UIColor.systemBackground))
 
@@ -310,8 +310,12 @@ struct NotesView: View {
                 NoteDetailSheetView(note: $selectedNoteForDetail, allNotes: notes)
             }
             .sheet(isPresented: $isAddNotePresented) {
-                let activeTags = noteTags.filter { !hiddenTags.contains($0.name) }
-                let currentActiveTag = selectedTag ?? activeTags.first?.name
+                let sortedActiveTags = noteTags.filter { !hiddenTags.contains($0.name) }.sorted { (tag1, tag2) -> Bool in
+                    let date1 = getTagLatestDate(tagName: tag1.name)
+                    let date2 = getTagLatestDate(tagName: tag2.name)
+                    return date1 > date2
+                }
+                let currentActiveTag = selectedTag ?? sortedActiveTags.first?.name
                 let initTags: [String] = (isShowingTagsView && currentActiveTag != nil) ? [currentActiveTag!] : []
                 AddEditNoteSheetView(noteToEdit: nil, initialDate: selectedDate, allNotes: notes, initialTags: initTags)
             }
@@ -325,66 +329,31 @@ struct NotesView: View {
     // MARK: - Custom Navigation Bar (Title & Actions)
 
     private var customNavBar: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 8) {
+        Button(action: {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isShowingTagsView.toggle()
+            }
+        }) {
+            HStack(alignment: .center) {
                 Text(isShowingTagsView ? "Etiketler" : "Takvim & Notlar")
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
                 
-                // Toggle view between Tags and Calendar immediately next to title!
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        isShowingTagsView.toggle()
-                    }
-                }) {
+                Spacer()
+                
+                ZStack {
+                    Circle()
+                        .fill(Color.gray.opacity(0.1))
+                        .frame(width: 36, height: 36)
+                    
                     Image(systemName: "arrow.left.and.right")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.primary)
                 }
             }
-            
-            Spacer()
-            
-            HStack(spacing: 16) {
-                if isShowingTagsView {
-                    // Tag Settings button (gear) shown in Tag View
-                    Button(action: {
-                        isTagSettingsPresented = true
-                    }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.blue)
-                    }
-                } else {
-                    // Calendar view actions
-                    Menu {
-                        Button(action: { calendarViewMode = "stack" }) {
-                            Label("Yığın Liste (Not Başlıkları)", systemImage: "list.bullet")
-                        }
-                        Button(action: { calendarViewMode = "dots" }) {
-                            Label("Noktalı Liste", systemImage: "calendar")
-                        }
-                    } label: {
-                        Image(systemName: calendarViewMode == "stack" ? "list.bullet" : "calendar")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.blue)
-                    }
-                    
-                    Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            isSearching.toggle()
-                            if !isSearching {
-                                searchQuery = ""
-                            }
-                        }
-                    }) {
-                        Image(systemName: isSearching ? "magnifyingglass.circle.fill" : "magnifyingglass")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(isSearching ? .blue : .primary)
-                    }
-                }
-            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(PlainButtonStyle())
     }
 
     // MARK: - Header Controls View
@@ -999,39 +968,50 @@ struct NotesView: View {
         }
     }
 
-    // MARK: - Tags View Subpage
-
     private var tagsViewSubpage: some View {
         let activeTags = noteTags.filter { !hiddenTags.contains($0.name) }
+        
+        // Sort tags by most recent note date (newest note tag first)
+        let sortedActiveTags = activeTags.sorted { (tag1, tag2) -> Bool in
+            let date1 = getTagLatestDate(tagName: tag1.name)
+            let date2 = getTagLatestDate(tagName: tag2.name)
+            return date1 > date2
+        }
         
         return VStack(alignment: .leading, spacing: 12) {
             Text("Notlarınızı etiketlerine göre görsel bir biçimde inceleyin ve yönetin.")
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+                .padding(.bottom, 4)
             
-            // Grid of Tag Cards
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
-                ForEach(activeTags, id: \.id) { tag in
-                    TagCardWrapperView(
-                        tag: tag,
-                        notes: notes,
-                        isSelected: (selectedTag ?? activeTags.first?.name) == tag.name,
-                        lastUpdated: getTagLastUpdatedString(tagName: tag.name)
-                    )
-                    .onTapGesture {
-                        withAnimation(.spring()) {
-                            selectedTag = tag.name
-                            tagNotesPage = 1 // Reset pagination page on active tag switch
+            // Horizontal Scroll View of Tag Cards
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(sortedActiveTags, id: \.id) { tag in
+                        let isSelected = (selectedTag ?? sortedActiveTags.first?.name) == tag.name
+                        TagCardWrapperView(
+                            tag: tag,
+                            notes: notes,
+                            isSelected: isSelected,
+                            lastUpdated: getTagLastUpdatedString(tagName: tag.name)
+                        )
+                        .scaleEffect(isSelected ? 1.05 : 0.95)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                selectedTag = tag.name
+                                tagNotesPage = 1 // Reset pagination page on active tag switch
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
             }
-            .padding(.horizontal, 16)
             
             // Active Tag Detail Notes
-            if let activeTag = selectedTag ?? activeTags.first?.name {
+            if let activeTag = selectedTag ?? sortedActiveTags.first?.name {
                 let activeTagNotes = notes.filter { ($0.tags ?? []).contains(activeTag) && $0.deleted != true }
                     .sorted { (n1, n2) -> Bool in
                         let date1 = n1.createdAt ?? n1.parsedDate ?? Date.distantPast
@@ -1209,6 +1189,17 @@ struct NotesView: View {
                 guard let data = snap?.data() else { return }
                 self.hiddenTags = data["hiddenTags"] as? [String] ?? []
             }
+    }
+
+    private func getTagLatestDate(tagName: String) -> Date {
+        let tagNotes = notes.filter { ($0.tags ?? []).contains(tagName) && $0.deleted != true }
+        guard !tagNotes.isEmpty else { return Date.distantPast }
+        let sorted = tagNotes.sorted { (n1, n2) -> Bool in
+            let date1 = n1.createdAt ?? n1.parsedDate ?? Date.distantPast
+            let date2 = n2.createdAt ?? n2.parsedDate ?? Date.distantPast
+            return date1 > date2
+        }
+        return sorted.first?.createdAt ?? sorted.first?.parsedDate ?? Date.distantPast
     }
 
     private func getTagLastUpdatedString(tagName: String) -> String? {
@@ -1759,6 +1750,7 @@ struct AddEditNoteSheetView: View {
     @State private var itemType: String = ""
     @State private var noteDate: Date = Date()
     @State private var noteImageUrl: String = ""
+    @State private var isContentExpanded: Bool = false
     
     // Rich Text State
     @State private var activeCommand: String = ""
@@ -1819,195 +1811,263 @@ struct AddEditNoteSheetView: View {
     
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Genel Bilgiler")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Not başlığı girin...", text: $title)
-                            .font(.system(size: 16, weight: .bold))
-                        
-                        if !similarNotes.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("VAROLAN BAŞLIKLAR (Tıkla ve Kopyala)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.gray)
-                                    .padding(.top, 4)
-                                
-                                ForEach(similarNotes) { note in
-                                    Button(action: {
-                                        title = note.title ?? ""
-                                        selectedColor = note.color ?? "blue"
-                                        tagsList = note.tags ?? []
-                                        itemType = note.itemType ?? ""
-                                    }) {
-                                        HStack {
-                                            Circle()
-                                                .fill(Color(hex: getHexForColorName(note.color ?? "blue")))
-                                                .frame(width: 8, height: 8)
-                                            Text(note.title ?? "")
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 6)
-                                        .padding(.horizontal, 8)
-                                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.08)))
-                                    }
-                                    .buttonStyle(PlainButtonStyle())
-                                }
-                            }
-                            .transition(.opacity)
-                        }
-                    }
-                    
-                    DatePicker("Tarih", selection: $noteDate, displayedComponents: .date)
-                        .environment(\.locale, Locale(identifier: "tr_TR"))
-                }
-                
-                Section(header: Text("Etiketler")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Tag badges list
-                        if !tagsList.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 8) {
-                                    ForEach(tagsList, id: \.self) { tag in
-                                        HStack(spacing: 4) {
-                                            Text(tag)
-                                                .font(.system(size: 11, weight: .medium))
-                                            Button(action: {
-                                                tagsList.removeAll { $0 == tag }
-                                            }) {
-                                                Image(systemName: "xmark")
-                                                    .font(.system(size: 8, weight: .bold))
-                                                    .foregroundColor(.blue.opacity(0.6))
-                                            }
-                                            .buttonStyle(PlainButtonStyle())
-                                        }
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .background(Capsule().fill(Color.blue.opacity(0.1)))
-                                        .foregroundColor(.blue)
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Tag input field
+            Group {
+                if isContentExpanded {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Header Bar inside expanded mode
                         HStack {
-                            TextField("Etiket ekle...", text: $tagInput, onCommit: {
-                                addTag()
-                            })
-                            .textFieldStyle(PlainTextFieldStyle())
+                            Text("Not İçeriği (Tam Ekran)")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.secondary)
+                            
+                            Spacer()
                             
                             Button(action: {
-                                addTag()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isContentExpanded.toggle()
+                                }
                             }) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 20))
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .font(.system(size: 13, weight: .bold))
+                                    Text("Küçült")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(Color.blue.opacity(0.12)))
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
                         
-                        // Tag suggestions list
-                        if !filteredTagSuggestions.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 6) {
-                                    ForEach(filteredTagSuggestions, id: \.self) { tag in
-                                        Button(action: {
-                                            tagsList.append(tag)
-                                            tagInput = ""
-                                        }) {
-                                            Text(tag)
-                                                .font(.system(size: 10, weight: .semibold))
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Capsule().fill(Color.gray.opacity(0.12)))
-                                                .foregroundColor(.primary)
-                                        }
-                                        .buttonStyle(PlainButtonStyle())
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-                
-                Section(header: Text("Not Rengi")) {
-                    HStack(spacing: 16) {
-                        ForEach(colors, id: \.self) { colorName in
-                            ZStack {
-                                Circle()
-                                    .fill(Color(hex: getHexForColorName(colorName)))
-                                    .frame(width: 32, height: 32)
-                                    .onTapGesture {
-                                        selectedColor = colorName
-                                    }
-                                
-                                if selectedColor == colorName {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.white)
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section(header: Text("Afiş Görseli")) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        if !recentImages.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("SON KULLANILAN AFİŞLER (Tıkla ve Seç)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.gray)
-                                
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(recentImages, id: \.self) { imgUrl in
-                                            let isSelected = noteImageUrl == imgUrl
-                                            NoteImageView(urlString: imgUrl)
-                                                .frame(width: 45, height: 65)
-                                                .cornerRadius(6)
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: isSelected ? 2.5 : 1)
-                                                )
-                                                .scaleEffect(isSelected ? 1.05 : 1.0)
-                                                .onTapGesture {
-                                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
-                                                        if noteImageUrl == imgUrl {
-                                                            noteImageUrl = ""
-                                                        } else {
-                                                            noteImageUrl = imgUrl
-                                                        }
-                                                    }
-                                                }
-                                        }
-                                    }
-                                    .padding(.vertical, 4)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                
-                Section(header: Text("Not İçeriği")) {
-                    VStack(alignment: .leading, spacing: 8) {
                         // Rich text styling toolbar
                         RichTextToolbar(activeCommand: $activeCommand)
-                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 12)
                         
-                        // Custom web editor wrapper
+                        // Expanded web editor wrapper filling entire sheet
                         RichTextEditorView(htmlContent: $noteText, activeCommand: $activeCommand)
-                            .frame(minHeight: 300)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(Color(UIColor.systemBackground))
-                            .cornerRadius(8)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 12)
                     }
-                    .padding(.vertical, 4)
+                    .background(Color(UIColor.secondarySystemGroupedBackground).ignoresSafeArea())
+                } else {
+                    Form {
+                        Section(header: Text("Genel Bilgiler")) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                TextField("Not başlığı girin...", text: $title)
+                                    .font(.system(size: 16, weight: .bold))
+                                
+                                if !similarNotes.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("VAROLAN BAŞLIKLAR (Tıkla ve Kopyala)")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundColor(.gray)
+                                            .padding(.top, 4)
+                                        
+                                        ForEach(similarNotes) { note in
+                                            Button(action: {
+                                                title = note.title ?? ""
+                                                selectedColor = note.color ?? "blue"
+                                                tagsList = note.tags ?? []
+                                                itemType = note.itemType ?? ""
+                                            }) {
+                                                HStack {
+                                                    Circle()
+                                                        .fill(Color(hex: getHexForColorName(note.color ?? "blue")))
+                                                        .frame(width: 8, height: 8)
+                                                    Text(note.title ?? "")
+                                                        .font(.system(size: 13, weight: .medium))
+                                                        .foregroundColor(.primary)
+                                                    Spacer()
+                                                }
+                                                .padding(.vertical, 6)
+                                                .padding(.horizontal, 8)
+                                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.08)))
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                    }
+                                    .transition(.opacity)
+                                }
+                            }
+                            
+                            DatePicker("Tarih", selection: $noteDate, displayedComponents: .date)
+                                .environment(\.locale, Locale(identifier: "tr_TR"))
+                        }
+                        
+                        Section(header: Text("Etiketler")) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Tag badges list
+                                if !tagsList.isEmpty {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 8) {
+                                            ForEach(tagsList, id: \.self) { tag in
+                                                HStack(spacing: 4) {
+                                                    Text(tag)
+                                                        .font(.system(size: 11, weight: .medium))
+                                                    Button(action: {
+                                                        tagsList.removeAll { $0 == tag }
+                                                    }) {
+                                                        Image(systemName: "xmark")
+                                                            .font(.system(size: 8, weight: .bold))
+                                                            .foregroundColor(.blue.opacity(0.6))
+                                                    }
+                                                    .buttonStyle(PlainButtonStyle())
+                                                }
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Capsule().fill(Color.blue.opacity(0.1)))
+                                                .foregroundColor(.blue)
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Tag input field
+                                HStack {
+                                    TextField("Etiket ekle...", text: $tagInput, onCommit: {
+                                        addTag()
+                                    })
+                                    .textFieldStyle(PlainTextFieldStyle())
+                                    
+                                    Button(action: {
+                                        addTag()
+                                    }) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundColor(.blue)
+                                            .font(.system(size: 20))
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                }
+                                
+                                // Tag suggestions list
+                                if !filteredTagSuggestions.isEmpty {
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 6) {
+                                            ForEach(filteredTagSuggestions, id: \.self) { tag in
+                                                Button(action: {
+                                                    tagsList.append(tag)
+                                                    tagInput = ""
+                                                }) {
+                                                    Text(tag)
+                                                        .font(.system(size: 10, weight: .semibold))
+                                                        .padding(.horizontal, 8)
+                                                        .padding(.vertical, 4)
+                                                        .background(Capsule().fill(Color.gray.opacity(0.12)))
+                                                        .foregroundColor(.primary)
+                                                }
+                                                .buttonStyle(PlainButtonStyle())
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        
+                        Section(header: Text("Not Rengi")) {
+                            HStack(spacing: 16) {
+                                ForEach(colors, id: \.self) { colorName in
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color(hex: getHexForColorName(colorName)))
+                                            .frame(width: 32, height: 32)
+                                            .onTapGesture {
+                                                selectedColor = colorName
+                                            }
+                                        
+                                        if selectedColor == colorName {
+                                            Image(systemName: "checkmark")
+                                                .foregroundColor(.white)
+                                                .font(.system(size: 12, weight: .bold))
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        
+                        Section(header: Text("Afiş Görseli")) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                if !recentImages.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("SON KULLANILAN AFİŞLER (Tıkla ve Seç)")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundColor(.gray)
+                                        
+                                        ScrollView(.horizontal, showsIndicators: false) {
+                                            HStack(spacing: 8) {
+                                                ForEach(recentImages, id: \.self) { imgUrl in
+                                                    let isSelected = noteImageUrl == imgUrl
+                                                    NoteImageView(urlString: imgUrl)
+                                                        .frame(width: 45, height: 65)
+                                                        .cornerRadius(6)
+                                                        .overlay(
+                                                            RoundedRectangle(cornerRadius: 6)
+                                                                .stroke(isSelected ? Color.blue : Color.gray.opacity(0.2), lineWidth: isSelected ? 2.5 : 1)
+                                                        )
+                                                        .scaleEffect(isSelected ? 1.05 : 1.0)
+                                                        .onTapGesture {
+                                                            withAnimation(.spring(response: 0.25, dampingFraction: 0.75)) {
+                                                                if noteImageUrl == imgUrl {
+                                                                    noteImageUrl = ""
+                                                                } else {
+                                                                    noteImageUrl = imgUrl
+                                                                }
+                                                            }
+                                                        }
+                                                }
+                                            }
+                                            .padding(.vertical, 4)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        
+                        Section(header:
+                            HStack {
+                                Text("Not İçeriği")
+                                Spacer()
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        isContentExpanded.toggle()
+                                    }
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("Genişlet")
+                                            .font(.system(size: 11, weight: .semibold))
+                                    }
+                                    .foregroundColor(.blue)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        ) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Rich text styling toolbar
+                                RichTextToolbar(activeCommand: $activeCommand)
+                                    .frame(maxWidth: .infinity)
+                                
+                                // Custom web editor wrapper
+                                RichTextEditorView(htmlContent: $noteText, activeCommand: $activeCommand)
+                                    .frame(minHeight: 300)
+                                    .background(Color(UIColor.systemBackground))
+                                    .cornerRadius(8)
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
                 }
             }
             .navigationTitle(noteToEdit == nil ? "Yeni Not Ekle" : "Notu Düzenle")
@@ -2411,9 +2471,9 @@ struct TagCardView: View {
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .bottom) {
                     TagCollageView(images: images)
-                        .frame(height: 260) // Vertical rectangle movie poster layout (Reduced by 10%)
+                        .frame(width: 170, height: 250) // Fixed card width for horizontal scrolling
                         .clipped()
-                        .cornerRadius(12)
+                        .cornerRadius(14)
                     
                     // Label overlay
                     VStack {
@@ -2454,12 +2514,12 @@ struct TagCardView: View {
                         .padding(.leading, 10)
                 }
             }
-            .cornerRadius(12)
+            .cornerRadius(14)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 14)
                     .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
             )
-            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .shadow(color: isSelected ? Color.blue.opacity(0.3) : Color.black.opacity(0.12), radius: isSelected ? 10 : 6, x: 0, y: 4)
         }
     }
 }
