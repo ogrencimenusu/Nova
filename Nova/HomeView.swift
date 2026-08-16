@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 enum HomeWidgetType: String, CaseIterable, Codable, Identifiable {
     case bank = "bank"
     case finance = "finance"
+    case profitCalculator = "profitCalculator"
     case stock = "stock"
     case dictionary = "dictionary"
     case calendar = "calendar"
@@ -15,17 +16,24 @@ enum HomeWidgetType: String, CaseIterable, Codable, Identifiable {
 
 struct HomeView: View {
     // Ordering & Visibility States
-    @AppStorage("home_widget_order_v2") private var widgetOrderJSON: String = "[\"bank\",\"finance\",\"stock\",\"dictionary\",\"calendar\"]"
+    @AppStorage("home_widget_order_v2") private var widgetOrderJSON: String = "[\"bank\",\"finance\",\"profitCalculator\",\"stock\",\"dictionary\",\"calendar\"]"
     @AppStorage("home_widget_hidden_v2") private var widgetHiddenJSON: String = "[]"
     @State private var isCustomizeMode: Bool = false
     
     private var widgetOrder: [HomeWidgetType] {
         if let data = widgetOrderJSON.data(using: .utf8),
            let arr = try? JSONDecoder().decode([String].self, from: data) {
-            let list = arr.compactMap { HomeWidgetType(rawValue: $0) }
+            var list = arr.compactMap { HomeWidgetType(rawValue: $0) }
+            if !list.contains(.profitCalculator) {
+                if let idx = list.firstIndex(of: .finance) {
+                    list.insert(.profitCalculator, at: idx + 1)
+                } else {
+                    list.append(.profitCalculator)
+                }
+            }
             if !list.isEmpty { return list }
         }
-        return [.bank, .finance, .stock, .dictionary, .calendar]
+        return [.bank, .finance, .profitCalculator, .stock, .dictionary, .calendar]
     }
     
     private var hiddenWidgets: Set<String> {
@@ -71,6 +79,7 @@ struct HomeView: View {
         switch type {
         case .bank: return "Hesap Özetleri"
         case .finance: return "Finans Özetleri"
+        case .profitCalculator: return "Net Kazanç Hesaplayıcı"
         case .stock: return "Borsa Portföyüm"
         case .dictionary: return "Sözlük Özetleri"
         case .calendar: return "Ajanda & Notlar"
@@ -88,6 +97,15 @@ struct HomeView: View {
     @State private var totalFinanceTax: Double = 0.0
     @State private var totalStockPortfolio: Double = 0.0
     @State private var totalStockTax: Double = 0.0
+    
+    // Net Profit Calculator Widget States
+    @State private var calcManualCash: Double = 0.0
+    @State private var calcManualCashText: String = ""
+    @State private var calcRowSelected: [String: Bool] = [:]
+    @State private var calcRowOperators: [String: String] = [:]
+    @State private var calcBankGroups: [WidgetBankGroup] = []
+    @State private var calcIsExpanded: Bool = true
+    @FocusState private var isCashInputFocused: Bool
     
     // Streak & Quick Tests Widget States
     @State private var streakCount: Int = 0
@@ -230,6 +248,17 @@ struct HomeView: View {
             )
             .ignoresSafeArea()
         )
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Bitti") {
+                    isCashInputFocused = false
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundColor(Color(hex: "8e44ad"))
+            }
+        }
         .onAppear {
             loadSavedOrder()
             loadAllData()
@@ -478,6 +507,10 @@ struct HomeView: View {
                     }
                 }
             }
+            
+        case .profitCalculator:
+            // 3. Net Profit Calculator Widget
+            profitCalculatorWidget
             
         case .stock:
             // 3. Stock Summary Widget (Horizontal Scroll - 75% screen width)
@@ -1093,6 +1126,164 @@ struct HomeView: View {
                 self.todayNotes = allNotes.filter { Calendar.current.isDateInToday($0.parsedDate) }
                 self.futureNotes = allNotes.filter { $0.parsedDate > Date() && !Calendar.current.isDateInToday($0.parsedDate) }
                 
+                // 5. Load Net Profit Calculator Config & Bank Groups Data
+                if let calcSnap = try? await db.collection("users").document(user.uid).collection("config").document("netProfitCalculator").getDocumentSmart(),
+                   let cData = calcSnap.data() {
+                    let savedCash = parseAmount(cData["manualCash"])
+                    let savedSel = cData["rowSelected"] as? [String: Bool] ?? [:]
+                    let savedOps = cData["rowOperators"] as? [String: String] ?? [:]
+                    
+                    self.calcManualCash = savedCash
+                    self.calcManualCashText = formatNumberTR(savedCash)
+                    self.calcRowSelected = savedSel
+                    self.calcRowOperators = savedOps
+                }
+
+                let bankSettingsSnap = try? await db.collection("users").document(user.uid).collection("config").document("bankSettings").getDocumentSmart()
+                var groupBy = bankSettingsSnap?.data()?["groupBy"] as? String ?? "type"
+                if groupBy == "none" || groupBy.isEmpty {
+                    groupBy = "type"
+                }
+
+                let groupSettingsSnap = try? await db.collection("users").document(user.uid).collection("groupSettings").document("bankGroups").getDocumentSmart()
+                let groupSettingsData = groupSettingsSnap?.data() ?? [:]
+                let currentSettings = groupSettingsData[groupBy] as? [String: Any] ?? [:]
+                let customOrder = currentSettings["order"] as? [String] ?? []
+                let visibilityMap = currentSettings["visibility"] as? [String: Bool] ?? [:]
+
+                let bankGroupConfigsSnap = try? await db.collection("users").document(user.uid).collection("config").document("bankGroupConfigs").getDocumentSmart()
+                let bankGroupConfigsData = bankGroupConfigsSnap?.data() ?? [:]
+
+                let transTypesSnap = try? await db.collection("users").document(user.uid).collection("transactionTypes").getDocumentsSmart()
+                var transTypesDict: [String: (name: String, color: String)] = [:]
+                for doc in transTypesSnap?.documents ?? [] {
+                    let d = doc.data()
+                    transTypesDict[doc.documentID] = (d["name"] as? String ?? "", d["color"] as? String ?? "Gray")
+                }
+
+                let qaSnap = try? await db.collection("users").document(user.uid).collection("quickActions").getDocumentsSmart()
+                var qaDict: [String: (name: String, color: String)] = [:]
+                for doc in qaSnap?.documents ?? [] {
+                    let d = doc.data()
+                    qaDict[doc.documentID] = (d["name"] as? String ?? "", d["color"] as? String ?? "Gray")
+                }
+
+                var groupDict: [String: [WidgetBankTransactionRecord]] = [:]
+
+                for doc in bankTransSnap.documents {
+                    let tData = doc.data()
+                    let id = doc.documentID
+                    let bankId = tData["bankId"] as? String ?? ""
+                    let title = tData["title"] as? String ?? ""
+                    let amount = parseAmountDouble(tData["amount"])
+                    let date = tData["date"] as? String ?? ""
+                    let type = tData["type"] as? String ?? ""
+                    let qa = tData["quickActions"] as? [String] ?? []
+
+                    var tDeleted = false
+                    if let boolVal = tData["deleted"] as? Bool { tDeleted = boolVal }
+                    else if let intVal = tData["deleted"] as? Int { tDeleted = (intVal == 1) }
+                    else if let strVal = tData["deleted"] as? String { tDeleted = (strVal.lowercased() == "true" || strVal == "1") }
+
+                    if tDeleted { continue }
+
+                    var key = "Empty"
+                    if groupBy == "bankId" {
+                        key = bankId.isEmpty ? "Empty" : bankId
+                    } else if groupBy == "type" {
+                        key = type.isEmpty ? "Empty" : type
+                    } else if groupBy == "quickActions" {
+                        key = qa.first ?? "Empty"
+                    }
+
+                    groupDict[key, default: []].append(WidgetBankTransactionRecord(id: id, bankId: bankId, title: title, amount: amount, date: date, type: type, quickActions: qa))
+                }
+
+                var groupsList: [WidgetBankGroup] = []
+
+                for (key, items) in groupDict {
+                    let isGroupVisible = visibilityMap[key] ?? true
+                    if !isGroupVisible { continue }
+
+                    var label = "Değer Yok"
+                    var colorHex = "808080"
+
+                    if groupBy == "bankId" {
+                        if let b = allBanks.first(where: { $0.id == key }) {
+                            label = b.name ?? ""
+                        } else if key == "Empty" {
+                            label = "Bankasız"
+                        }
+                    } else if groupBy == "type" {
+                        if let typeInfo = transTypesDict[key] {
+                            label = typeInfo.name
+                            colorHex = tagColorToHex(typeInfo.color)
+                        } else if key == "Empty" {
+                            label = "Tür Belirtilmemiş"
+                        }
+                    } else if groupBy == "quickActions" {
+                        if let qaInfo = qaDict[key] {
+                            label = qaInfo.name
+                            colorHex = tagColorToHex(qaInfo.color)
+                        } else if key == "Empty" {
+                            label = "Hızlı İşlem Yok"
+                        }
+                    }
+
+                    var dateFilterStart: Date? = nil
+                    var dateFilterEnd: Date? = nil
+
+                    if let gConfig = bankGroupConfigsData[key] as? [String: Any] {
+                        let filtersRaw = gConfig["filters"] as? [Any] ?? []
+                        for fItem in filtersRaw {
+                            if let fDict = fItem as? [String: Any],
+                               (fDict["propId"] as? String) == "date",
+                               (fDict["operator"] as? String) == "between",
+                               let valStr = fDict["value"] as? String {
+                                let parts = valStr.split(separator: ",")
+                                if parts.count == 2 {
+                                    let df = DateFormatter()
+                                    df.dateFormat = "yyyy-MM-dd"
+                                    if let sDate = df.date(from: String(parts[0])),
+                                       let eDate = df.date(from: String(parts[1])) {
+                                        dateFilterStart = Calendar.current.startOfDay(for: sDate)
+                                        dateFilterEnd = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: eDate) ?? eDate
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    var filteredItems = items
+                    var hasActiveFilter = false
+                    if let start = dateFilterStart, let end = dateFilterEnd {
+                        hasActiveFilter = true
+                        let df = DateFormatter()
+                        df.dateFormat = "yyyy-MM-dd"
+                        filteredItems = items.filter { t in
+                            let prefixStr = String(t.date.prefix(10))
+                            if let tDate = df.date(from: prefixStr) {
+                                return tDate >= start && tDate <= end
+                            }
+                            return false
+                        }
+                    }
+
+                    let total = filteredItems.reduce(0.0) { $0 + $1.amount }
+                    groupsList.append(WidgetBankGroup(id: key, label: label, color: colorHex, total: total, hasActiveFilter: hasActiveFilter))
+                }
+
+                groupsList.sort { a, b in
+                    let idxA = customOrder.firstIndex(of: a.id) ?? 999
+                    let idxB = customOrder.firstIndex(of: b.id) ?? 999
+                    if idxA != idxB {
+                        return idxA < idxB
+                    }
+                    return a.label.localizedCompare(b.label) == .orderedAscending
+                }
+
+                self.calcBankGroups = groupsList
+
                 self.isLoading = false
                 self.hasLoadedOnce = true // Silently loads in background next time
             } catch {
@@ -1107,6 +1298,467 @@ struct HomeView: View {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: d)
     }
+
+    // MARK: - Net Profit Calculator Widget & Subviews
+
+    private var profitCalculatorWidget: some View {
+        let netProfit = calcNetResult
+        let totalPlus = calcTotalPlus
+        let totalMinus = calcTotalMinus
+
+        return VStack(alignment: .leading, spacing: 14) {
+            // Widget Header
+            HStack {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(hex: "8e44ad"), Color(hex: "6c5ce7")],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 30, height: 30)
+
+                        Image(systemName: "calculator")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Net Kazanç Hesaplayıcı")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+
+                        Text("Portföy & Nakit Bilanço Analizi")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                Button(action: {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        calcIsExpanded.toggle()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Text(calcIsExpanded ? "Daralt" : "Düzenle")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                        Image(systemName: calcIsExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(Color(hex: "8e44ad"))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color(hex: "8e44ad").opacity(0.08))
+                    .cornerRadius(10)
+                }
+            }
+            .padding(.horizontal, 2)
+
+            // Hero Summary Banner Card
+            VStack(spacing: 12) {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("NET KAZANÇ / PORTFÖY FARKI")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .tracking(0.4)
+
+                        Text(formatCurrency(netProfit))
+                            .font(.system(size: 25, weight: .heavy, design: .rounded))
+                            .foregroundColor(netProfit >= 0 ? Color(hex: "10b981") : Color(hex: "ef4444"))
+                    }
+
+                    Spacer()
+
+                    ZStack {
+                        Circle()
+                            .fill((netProfit >= 0 ? Color(hex: "10b981") : Color(hex: "ef4444")).opacity(0.12))
+                            .frame(width: 44, height: 44)
+
+                        Image(systemName: netProfit >= 0 ? "arrow.up.right.circle.fill" : "arrow.down.right.circle.fill")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(netProfit >= 0 ? Color(hex: "10b981") : Color(hex: "ef4444"))
+                    }
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    // Toplanan Pill
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(hex: "10b981"))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Toplanan")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundColor(.secondary)
+                            Text(formatCurrency(totalPlus))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(hex: "10b981").opacity(0.08))
+                    .cornerRadius(10)
+
+                    // Çıkarılan Pill
+                    HStack(spacing: 6) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(Color(hex: "ef4444"))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Çıkarılan")
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .foregroundColor(.secondary)
+                            Text(formatCurrency(totalMinus))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                        }
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(hex: "ef4444").opacity(0.08))
+                    .cornerRadius(10)
+                }
+            }
+            .padding(14)
+            .background(
+                LinearGradient(
+                    colors: netProfit >= 0
+                        ? [Color(hex: "10b981").opacity(0.05), Color(hex: "10b981").opacity(0.01)]
+                        : [Color(hex: "ef4444").opacity(0.05), Color(hex: "ef4444").opacity(0.01)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke((netProfit >= 0 ? Color(hex: "10b981") : Color(hex: "ef4444")).opacity(0.18), lineWidth: 1)
+            )
+
+            // Group Rows List
+            if calcIsExpanded {
+                VStack(spacing: 6) {
+                    ForEach(calcItems) { item in
+                        calcRowView(item: item)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func calcRowView(item: NetCalcItem) -> some View {
+        HStack(spacing: 8) {
+            // Selection Checkbox Button
+            Button(action: {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                    toggleItemSelection(id: item.id)
+                }
+            }) {
+                Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(item.isSelected ? Color(hex: "8e44ad") : Color.gray.opacity(0.35))
+            }
+
+            // Operator Toggle (+ / -)
+            Button(action: {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                    toggleItemOperator(id: item.id)
+                }
+            }) {
+                Text(item.op)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(item.op == "+" ? Color(hex: "10b981") : Color(hex: "ef4444"))
+                    )
+            }
+            .opacity(item.isSelected ? 1.0 : 0.4)
+
+            // Icon + Title + Badges
+            HStack(spacing: 6) {
+                if item.isManualCash {
+                    Image(systemName: "banknote.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "f39c12"))
+                } else if item.isFinanceNet {
+                    Image(systemName: "chart.pie.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: "10b981"))
+                } else {
+                    Circle()
+                        .fill(Color(hex: item.colorHex))
+                        .frame(width: 8, height: 8)
+                }
+
+                Text(item.title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(item.isSelected ? .primary : .secondary)
+                    .lineLimit(1)
+
+                if item.hasFilter {
+                    Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(Color(hex: "8e44ad"))
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            // Amount or TextField Input
+            if item.isManualCash {
+                HStack(spacing: 3) {
+                    Text("₺")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                    TextField("0", text: $calcManualCashText)
+                        .keyboardType(.decimalPad)
+                        .focused($isCashInputFocused)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 100)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 6)
+                        .background(Color.black.opacity(0.04))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isCashInputFocused ? Color(hex: "8e44ad") : Color.clear, lineWidth: 1)
+                        )
+                        .onChange(of: calcManualCashText) { newValue in
+                            let val = parseAmountDouble(newValue)
+                            calcManualCash = val
+                            saveNetCalculatorConfig()
+                        }
+                        .onChange(of: isCashInputFocused) { isFocused in
+                            if !isFocused {
+                                calcManualCashText = formatNumberTR(calcManualCash)
+                            }
+                        }
+                }
+            } else {
+                Text(formatCurrency(item.amount))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(item.isSelected ? .primary : .secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(item.isSelected ? Color.black.opacity(0.02) : Color.clear)
+        )
+    }
+
+    private var calcItems: [NetCalcItem] {
+        var list: [NetCalcItem] = []
+
+        for group in calcBankGroups {
+            let isSel = calcRowSelected[group.id] ?? true
+            let op = calcRowOperators[group.id] ?? "+"
+            list.append(NetCalcItem(
+                id: group.id,
+                title: group.label,
+                amount: group.total,
+                isSelected: isSel,
+                op: op,
+                isManualCash: false,
+                isFinanceNet: false,
+                colorHex: group.color,
+                hasFilter: group.hasActiveFilter
+            ))
+        }
+
+        let cashSel = calcRowSelected["cash"] ?? true
+        let cashOp = calcRowOperators["cash"] ?? "+"
+        list.append(NetCalcItem(
+            id: "cash",
+            title: "Elimdeki Nakit",
+            amount: calcManualCash,
+            isSelected: cashSel,
+            op: cashOp,
+            isManualCash: true,
+            isFinanceNet: false,
+            colorHex: "f39c12"
+        ))
+
+        let finSel = calcRowSelected["finance"] ?? true
+        let finOp = calcRowOperators["finance"] ?? "-"
+        list.append(NetCalcItem(
+            id: "finance",
+            title: "Finanstaki Net Para",
+            amount: totalFinancePortfolio,
+            isSelected: finSel,
+            op: finOp,
+            isManualCash: false,
+            isFinanceNet: true,
+            colorHex: "2ecc71"
+        ))
+
+        return list
+    }
+
+    private var calcTotalPlus: Double {
+        calcItems.filter { $0.isSelected && $0.op == "+" }.reduce(0.0) { $0 + $1.amount }
+    }
+
+    private var calcTotalMinus: Double {
+        calcItems.filter { $0.isSelected && $0.op == "-" }.reduce(0.0) { $0 + $1.amount }
+    }
+
+    private var calcNetResult: Double {
+        calcTotalPlus - calcTotalMinus
+    }
+
+    private func toggleItemSelection(id: String) {
+        let current = calcRowSelected[id] ?? true
+        calcRowSelected[id] = !current
+        saveNetCalculatorConfig()
+    }
+
+    private func toggleItemOperator(id: String) {
+        let defaultOp = (id == "finance") ? "-" : "+"
+        let current = calcRowOperators[id] ?? defaultOp
+        calcRowOperators[id] = (current == "+") ? "-" : "+"
+        saveNetCalculatorConfig()
+    }
+
+    private func saveNetCalculatorConfig() {
+        guard let user = Auth.auth().currentUser else { return }
+        let db = Firestore.firestore()
+
+        let dataToSave: [String: Any] = [
+            "manualCash": calcManualCash,
+            "rowSelected": calcRowSelected,
+            "rowOperators": calcRowOperators,
+            "lastUpdated": FieldValue.serverTimestamp()
+        ]
+
+        db.collection("users").document(user.uid).collection("config").document("netProfitCalculator").setData(dataToSave, merge: true)
+    }
+}
+
+// MARK: - Calculator Models & Helpers
+
+struct WidgetBankGroup: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let color: String
+    let total: Double
+    var hasActiveFilter: Bool = false
+}
+
+struct NetCalcItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let amount: Double
+    var isSelected: Bool
+    var op: String
+    let isManualCash: Bool
+    let isFinanceNet: Bool
+    let colorHex: String
+    var hasFilter: Bool = false
+}
+
+struct WidgetBankTransactionRecord {
+    let id: String
+    let bankId: String
+    let title: String
+    let amount: Double
+    let date: String
+    let type: String
+    let quickActions: [String]
+}
+
+fileprivate func tagColorToHex(_ color: String) -> String {
+    switch color.lowercased() {
+    case "red": return "ef4444"
+    case "blue": return "3b82f6"
+    case "green": return "10b981"
+    case "orange": return "f97316"
+    case "yellow": return "eab308"
+    case "purple": return "a855f7"
+    case "teal": return "14b8a6"
+    case "indigo": return "6366f1"
+    case "pink": return "ec4899"
+    case "gray": return "6b7280"
+    default:
+        if color.hasPrefix("#") || color.count >= 6 {
+            return color
+        }
+        return "6b7280"
+    }
+}
+
+fileprivate func parseAmountDouble(_ val: Any?) -> Double {
+    guard let val = val else { return 0.0 }
+    if let doubleVal = val as? Double {
+        return doubleVal
+    }
+    if let numVal = val as? NSNumber {
+        return numVal.doubleValue
+    }
+    if let intVal = val as? Int {
+        return Double(intVal)
+    }
+    if let strVal = val as? String {
+        let trimmed = strVal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return 0.0 }
+        
+        let isNegative = trimmed.hasPrefix("-")
+        var clean = trimmed.replacingOccurrences(of: "-", with: "")
+                           .replacingOccurrences(of: "+", with: "")
+                           .replacingOccurrences(of: "₺", with: "")
+                           .replacingOccurrences(of: "$", with: "")
+                           .replacingOccurrences(of: "€", with: "")
+                           .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if clean.contains(",") && clean.contains(".") {
+            if clean.lastIndex(of: ",")! > clean.lastIndex(of: ".")! {
+                clean = clean.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            } else {
+                clean = clean.replacingOccurrences(of: ",", with: "")
+            }
+        } else if clean.contains(",") {
+            clean = clean.replacingOccurrences(of: ",", with: ".")
+        } else if clean.contains(".") {
+            let components = clean.components(separatedBy: ".")
+            if components.count > 1 {
+                let lastComp = components.last ?? ""
+                if lastComp.count == 3 {
+                    clean = clean.replacingOccurrences(of: ".", with: "")
+                }
+            }
+        }
+        
+        let res = Double(clean) ?? 0.0
+        return isNegative ? -res : res
+    }
+    return 0.0
+}
+
+fileprivate func formatNumberTR(_ val: Double) -> String {
+    if val == 0.0 { return "" }
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.locale = Locale(identifier: "tr_TR")
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = 2
+    return formatter.string(from: NSNumber(value: val)) ?? String(format: "%.2f", val)
 }
 
 // MARK: - Drop Delegate for Drag & Drop Reordering

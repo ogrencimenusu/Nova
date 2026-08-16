@@ -48,3 +48,16 @@ struct MainTabView: View {
         // Native TabView automatically puts items > 4 into a "More" (Daha Fazla) tab.
     }
 }
+
+// MARK: - Global UINavigationController Swipe Back Extension
+
+extension UINavigationController: UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        return viewControllers.count > 1
+    }
+}

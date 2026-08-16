@@ -1,21 +1,55 @@
-# Xcode
+# ==========================================
+# Xcode & Build Output Files
+# ==========================================
 build/
+buildDerivedData/
 DerivedData/
-
-# Personal settings
-*.xcuserdata
-*.xcworkspace
-!default.xcworkspace
+*.xcarchive
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
 xcuserdata/
+*.xcuserdata
+.build/
+.swiftpm/
 
-# Sensitive configuration files (Firebase, keys)
+# Dependency Managers
+Pods/
+Carthage/Build/
+
+# ==========================================
+# Sensitive Configuration & API Keys
+# ==========================================
 *GoogleService-Info.plist
 *.keys
 *.env
 *.env.*
-*.json
+Secrets.swift
+Secrets.plist
+Keys.swift
+Config.plist
+*APIKey*
+*ApiKey*
+*Secret*.swift
+*Secret*.plist
+*credentials*.json
+*service-account*.json
 
-# OS generated files
+# Certificates & Provisioning Profiles
+*.mobileprovision
+*.provisionprofile
+*.p12
+*.pem
+*.cer
+*.crt
+*.p8
+*.keystore
+
+# Asset Catalog exceptions (Allow Contents.json in xcassets)
+!**/Contents.json
+
+# ==========================================
+# OS Generated Files
+# ==========================================
 .DS_Store
 .DS_Store?
 ._*

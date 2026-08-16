@@ -16,7 +16,6 @@ private let trDateFormatter: DateFormatter = {
     return f
 }()
 
-
 // MARK: - Finance Models
 
 struct FinanceInstitutionItem: Identifiable, Codable, Equatable {
@@ -442,6 +441,30 @@ class FinanceOperationsViewModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func ensureStockExists(symbolOrName: String, price: Double = 0) -> String {
+        guard let user = Auth.auth().currentUser else { return symbolOrName }
+        let clean = symbolOrName.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !clean.isEmpty else { return "" }
+        
+        if let existing = stocks.first(where: { $0.id.uppercased() == clean || $0.name.uppercased() == clean }) {
+            return existing.id
+        }
+        
+        let db = Firestore.firestore()
+        let stockRef = db.collection("users").document(user.uid).collection("stocks").document(clean)
+        stockRef.setData([
+            "name": clean,
+            "currentPrice": price,
+            "previousPrice": price,
+            "dailyChange": 0.0,
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+        
+        return clean
+    }
+
     func updateStockPrice(id: String, name: String, newPrice: Double, oldPrice: Double) {
         guard let user = Auth.auth().currentUser else { return }
         let dailyChange = oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice) * 100 : 0.0
@@ -621,13 +644,12 @@ class FinanceOperationsViewModel: ObservableObject {
     }
 }
 
-// MARK: - Main View
+// MARK: - Root Main View
 
 struct FinanceOperationsView: View {
     @ObservedObject private var viewModel = FinanceOperationsViewModel.shared
     @State private var stockViewLayout: String = "gallery"
     @State private var filterInstitutionId: String = "all"
-    @State private var searchText: String = ""
     @State private var limitCount: Int = 10
     @State private var showVisibilitySheet: Bool = false
     @State private var showAddSheet: Bool = false
@@ -639,114 +661,38 @@ struct FinanceOperationsView: View {
     private var instStats: [String: InstitutionStats] { viewModel.instStats }
     private var portfolio: [PortfolioItem] { viewModel.portfolio }
 
-    private var filteredLots: [ProcessedFinanceLot] {
-        var result = lots.reversed() as [ProcessedFinanceLot]
-        if filterInstitutionId != "all" { result = result.filter { $0.institutionId == filterInstitutionId } }
-        if !searchText.isEmpty {
-            result = result.filter { lot in
-                let sn = viewModel.stocks.first(where: { $0.id == lot.stockId })?.name ?? ""
-                let inn = viewModel.institutions.first(where: { $0.id == lot.institutionId })?.name ?? ""
-                return sn.localizedCaseInsensitiveContains(searchText) ||
-                       inn.localizedCaseInsensitiveContains(searchText) ||
-                       lot.date.contains(searchText) ||
-                       lot.type.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-        return result
-    }
-
     var body: some View {
         NavigationView {
             ZStack {
                 Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea()
 
                 if viewModel.isLoading {
-                    ProgressView("Yukleniyor...").progressViewStyle(CircularProgressViewStyle())
+                    ProgressView("Yükleniyor...")
+                        .progressViewStyle(CircularProgressViewStyle())
                 } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 24) {
-
-                            // Standard Page Title
-                            HStack {
-                                Text("Finans")
-                                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                                    .foregroundColor(.primary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-
-                            // Section 1: Kurumlar (Adı "Kurumlar" olarak güncellendi)
-                            FinanceInstitutionsSectionView(
-                                institutions: viewModel.institutions.filter { $0.visible },
-                                instStats: instStats,
-                                onVisibility: { showVisibilitySheet = true },
-                                onSelectInstitution: { inst in
-                                    selectedInstitution = inst
-                                }
-                            )
-
-                            dividerSection()
-
-                            // Section 2: Mevcut Hisseler (Hisselere dokununca modal açma entegrasyonu)
-                            FinanceStocksSectionView(
-                                portfolio: portfolio,
-                                processedLots: lots,
-                                stocks: viewModel.stocks,
-                                institutions: viewModel.institutions,
-                                stockViewLayout: $stockViewLayout,
-                                onSelectStock: { stock in
-                                    editingStock = stock
-                                }
-                            )
-
-                            dividerSection()
-
-                            // Section 3: Portfoy Analizi
-                            FinancePortfolioAnalysisSection(
-                                portfolio: portfolio,
-                                institutions: viewModel.institutions,
-                                instStats: instStats,
-                                processedLots: lots,
-                                onSelectStock: { stock in
-                                    editingStock = stock
-                                }
-                            )
-
-                            dividerSection()
-
-                            // Section 4: Finans Islemleri
-                            FinanceTransactionsSectionView(
-                                filteredLots: filteredLots,
-                                institutions: viewModel.institutions,
-                                stocks: viewModel.stocks,
-                                filterInstitutionId: $filterInstitutionId,
-                                limitCount: $limitCount,
-                                onAdd: { showAddSheet = true },
-                                onEdit: { lot in
-                                    if let t = viewModel.transactions.first(where: { $0.id == lot.id }) {
-                                        editingTransaction = t
-                                    }
-                                },
-                                onDelete: { lot in viewModel.deleteTransaction(id: lot.id) }
-                            )
-
-                            Spacer().frame(height: 20)
-                        }
-                        .padding(.top, 16)
-                    }
+                    FinanceMainDashboardView(
+                        viewModel: viewModel,
+                        showAddSheet: $showAddSheet,
+                        showVisibilitySheet: $showVisibilitySheet,
+                        editingTransaction: $editingTransaction,
+                        editingStock: $editingStock,
+                        selectedInstitution: $selectedInstitution,
+                        stockViewLayout: $stockViewLayout,
+                        filterInstitutionId: $filterInstitutionId,
+                        limitCount: $limitCount
+                    )
                 }
             }
             .navigationBarHidden(true)
             .onAppear { viewModel.startListeningIfNeeded() }
             .sheet(isPresented: $showVisibilitySheet) { FinanceVisibilitySheet(viewModel: viewModel) }
             .sheet(isPresented: $showAddSheet) {
-                FinanceAddEditSheet(transaction: nil, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
+                FinanceAddEditSheet(viewModel: viewModel, transaction: nil, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
                     viewModel.addTransaction(institutionId: instId, stockId: stockId, type: type, quantity: qty, price: price, taxRate: tax, date: date)
                 }
             }
             .sheet(item: $editingTransaction) { trans in
-                FinanceAddEditSheet(transaction: trans, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
+                FinanceAddEditSheet(viewModel: viewModel, transaction: trans, institutions: viewModel.institutions, stocks: viewModel.stocks, portfolio: portfolio, allTransactions: viewModel.transactions) { instId, stockId, type, qty, price, tax, date in
                     viewModel.updateTransaction(id: trans.id, institutionId: instId, stockId: stockId, type: type, quantity: qty, price: price, taxRate: tax, date: date)
                 }
             }
@@ -764,9 +710,673 @@ struct FinanceOperationsView: View {
             }
         }
     }
+}
 
-    private func dividerSection() -> some View {
-        Rectangle().fill(Color.gray.opacity(0.12)).frame(height: 1).padding(.horizontal, 16)
+// MARK: - Premium Main Dashboard (Hub View)
+
+struct FinanceMainDashboardView: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    @Binding var showAddSheet: Bool
+    @Binding var showVisibilitySheet: Bool
+    @Binding var editingTransaction: FinanceTransactionItem?
+    @Binding var editingStock: FinanceStockItem?
+    @Binding var selectedInstitution: FinanceInstitutionItem?
+    @Binding var stockViewLayout: String
+    @Binding var filterInstitutionId: String
+    @Binding var limitCount: Int
+
+    private var portfolio: [PortfolioItem] { viewModel.portfolio }
+    private var lots: [ProcessedFinanceLot] { viewModel.lots }
+    private var instStats: [String: InstitutionStats] { viewModel.instStats }
+
+    private var totalCost: Double { portfolio.reduce(0) { $0 + $1.totalCost } }
+    private var totalCurrentValue: Double { portfolio.reduce(0) { $0 + ($1.currentPrice * $1.quantity) } }
+    private var totalNetProfit: Double { portfolio.reduce(0) { $0 + $1.totalProfit } }
+    private var totalTax: Double { portfolio.reduce(0) { $0 + $1.totalTaxDeduction } }
+    private var totalDailyGain: Double { portfolio.reduce(0) { $0 + $1.dailyGain } }
+    private var profitPercentage: Double { totalCost > 0 ? (totalNetProfit / totalCost) * 100 : 0 }
+
+    private var visibleInstitutions: [FinanceInstitutionItem] { viewModel.institutions.filter { $0.visible } }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 20) {
+                // Header Bar
+                headerBar
+
+                // Executive Hero Card
+                heroCard
+
+                // Subpages Category Section
+                subPageSection
+
+                Spacer().frame(height: 30)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+
+    // Header Bar
+    private var headerBar: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Finans Yönetimi")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                Text("Portföy, Yatırımlar ve Analizler")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            
+            Button(action: { showAddSheet = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Yeni İşlem")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    LinearGradient(
+                        colors: [Color(red: 0.35, green: 0.72, blue: 0.98), Color(red: 0.12, green: 0.48, blue: 0.95)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .foregroundColor(.white)
+                .cornerRadius(20)
+                .shadow(color: Color.blue.opacity(0.25), radius: 6, x: 0, y: 3)
+            }
+        }
+    }
+
+    // Hero Overview Card (White - Grey - Light Blue Glassmorphism)
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TOPLAM PORTFÖY DEĞERİ")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .tracking(0.8)
+                    Text(formatTL(totalCurrentValue))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                }
+                Spacer()
+                
+                // Profit Badge Pill
+                HStack(spacing: 4) {
+                    Image(systemName: totalNetProfit >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        .font(.system(size: 11, weight: .bold))
+                    Text((totalNetProfit >= 0 ? "+" : "") + formatPct(profitPercentage))
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(totalNetProfit >= 0 ? Color.green.opacity(0.14) : Color.red.opacity(0.14))
+                .foregroundColor(totalNetProfit >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(totalNetProfit >= 0 ? Color.green.opacity(0.3) : Color.red.opacity(0.3), lineWidth: 1)
+                )
+            }
+
+            Rectangle()
+                .fill(Color.gray.opacity(0.12))
+                .frame(height: 1)
+
+            // Metrics Row 1: Net Kar/Zarar & Günlük Kazanç
+            HStack(spacing: 12) {
+                metricColumn(
+                    title: "Net Kar/Zarar",
+                    value: (totalNetProfit >= 0 ? "+" : "") + formatTL(totalNetProfit),
+                    valColor: totalNetProfit >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2)
+                )
+                
+                Divider()
+                    .background(Color.gray.opacity(0.15))
+                    .frame(height: 32)
+                
+                metricColumn(
+                    title: "Günlük Kazanç",
+                    value: (totalDailyGain >= 0 ? "+" : "") + formatTL(totalDailyGain),
+                    valColor: totalDailyGain >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2)
+                )
+            }
+
+            Rectangle()
+                .fill(Color.gray.opacity(0.12))
+                .frame(height: 1)
+
+            // Metrics Row 2: Toplam Yatırım & Tahmini Stopaj
+            HStack(spacing: 12) {
+                metricColumn(
+                    title: "Toplam Yatırım",
+                    value: formatTL(totalCost),
+                    valColor: Color(red: 0.15, green: 0.18, blue: 0.25)
+                )
+                
+                Divider()
+                    .background(Color.gray.opacity(0.15))
+                    .frame(height: 32)
+                
+                metricColumn(
+                    title: "Tahmini Stopaj",
+                    value: "-" + formatTL(totalTax, decimals: 2),
+                    valColor: Color(red: 0.85, green: 0.2, blue: 0.2)
+                )
+            }
+        }
+        .padding(20)
+        .background(
+            ZStack {
+                // White-Grey-Light Blue Blended Linear Gradient
+                LinearGradient(
+                    colors: [
+                        Color.white,
+                        Color(red: 0.96, green: 0.98, blue: 1.0),
+                        Color(red: 0.88, green: 0.94, blue: 0.99)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Light Blue Glow Blur Circle Accent (Top Right)
+                Circle()
+                    .fill(Color(red: 0.25, green: 0.65, blue: 0.98).opacity(0.2))
+                    .blur(radius: 45)
+                    .offset(x: 90, y: -40)
+
+                // Soft Sky-Blue Blur Accent (Bottom Left)
+                Circle()
+                    .fill(Color(red: 0.45, green: 0.8, blue: 0.98).opacity(0.15))
+                    .blur(radius: 40)
+                    .offset(x: -80, y: 50)
+            }
+        )
+        .cornerRadius(24)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white, Color(red: 0.35, green: 0.72, blue: 0.98).opacity(0.4)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
+        )
+        .shadow(color: Color.blue.opacity(0.12), radius: 14, x: 0, y: 6)
+    }
+
+    private func metricColumn(title: String, value: String, valColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(valColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // Sub-Page Category Navigation Cards Grid
+    private var subPageSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("ALT SAYFALAR")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundColor(.secondary)
+                .tracking(0.8)
+
+            VStack(spacing: 14) {
+                // Card 1: Kurumlar
+                NavigationLink(destination: FinanceInstitutionsSubView(
+                    viewModel: viewModel,
+                    showVisibilitySheet: $showVisibilitySheet,
+                    selectedInstitution: $selectedInstitution
+                )) {
+                    subPageCard(
+                        title: "Kurumlar & Bankalar",
+                        subtitle: "\(visibleInstitutions.count) Aktif Kurum Hesabı",
+                        icon: "building.columns.fill",
+                        iconColor: Color.blue,
+                        bgGradient: LinearGradient(colors: [Color.blue.opacity(0.12), Color.blue.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        badgeText: "Detaylar & Görünüm"
+                    )
+                }
+
+                // Card 2: Mevcut Hisseler
+                NavigationLink(destination: FinanceStocksSubView(
+                    viewModel: viewModel,
+                    stockViewLayout: $stockViewLayout,
+                    editingStock: $editingStock
+                )) {
+                    subPageCard(
+                        title: "Mevcut Hisseler & Fonlar",
+                        subtitle: "\(portfolio.count) Aktif Varlık Pozisyonu",
+                        icon: "chart.line.uptrend.xyaxis",
+                        iconColor: Color.green,
+                        bgGradient: LinearGradient(colors: [Color.green.opacity(0.12), Color.green.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        badgeText: "Galeri / Tablo / Özel"
+                    )
+                }
+
+                // Card 3: Portföy Analizi
+                NavigationLink(destination: FinancePortfolioAnalysisSubView(
+                    viewModel: viewModel,
+                    editingStock: $editingStock
+                )) {
+                    subPageCard(
+                        title: "Portföy Analizi & Dağılım",
+                        subtitle: "Hisse & Kurum Bazlı Grafikler ve Kar/Zarar",
+                        icon: "chart.pie.fill",
+                        iconColor: Color.purple,
+                        bgGradient: LinearGradient(colors: [Color.purple.opacity(0.12), Color.purple.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        badgeText: "Pasta Grafikleri & Raporlar"
+                    )
+                }
+
+                // Card 4: Finans İşlemleri
+                NavigationLink(destination: FinanceTransactionsSubView(
+                    viewModel: viewModel,
+                    filterInstitutionId: $filterInstitutionId,
+                    limitCount: $limitCount,
+                    showAddSheet: $showAddSheet,
+                    editingTransaction: $editingTransaction
+                )) {
+                    subPageCard(
+                        title: "Finans İşlemleri Kayıtları",
+                        subtitle: "\(viewModel.transactions.count) Alış / Satış İşlem Kaydı",
+                        icon: "arrow.left.arrow.right.circle.fill",
+                        iconColor: Color.orange,
+                        bgGradient: LinearGradient(colors: [Color.orange.opacity(0.12), Color.orange.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        badgeText: "İşlem Geçmişi & Filtreler"
+                    )
+                }
+            }
+        }
+    }
+
+    private func subPageCard(title: String, subtitle: String, icon: String, iconColor: Color, bgGradient: LinearGradient, badgeText: String) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(bgGradient)
+                    .frame(width: 50, height: 50)
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(iconColor)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.leading)
+                Text(subtitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.leading)
+                
+                Text(badgeText)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(iconColor)
+                    .multilineTextAlignment(.leading)
+                    .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.secondary.opacity(0.5))
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.gray.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+    }
+}
+
+// MARK: - Sub-Page 1: Kurumlar & Bankalar
+
+struct FinanceInstitutionsSubView: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    @Binding var showVisibilitySheet: Bool
+    @Binding var selectedInstitution: FinanceInstitutionItem?
+
+    private var totalPortfolioValue: Double {
+        viewModel.portfolio.reduce(0) { $0 + ($1.currentPrice * $1.quantity) }
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                // Institutions Gallery View Component
+                FinanceInstitutionsSectionView(
+                    institutions: viewModel.institutions.filter { $0.visible },
+                    instStats: viewModel.instStats,
+                    portfolio: viewModel.portfolio,
+                    totalPortfolioValue: totalPortfolioValue,
+                    onVisibility: { showVisibilitySheet = true },
+                    onSelectInstitution: { inst in
+                        selectedInstitution = inst
+                    }
+                )
+
+                Spacer().frame(height: 30)
+            }
+            .padding(.top, 16)
+        }
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Kurumlar & Bankalar")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showVisibilitySheet = true }) {
+                    Image(systemName: "eye.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Sub-Page 2: Mevcut Hisseler & Fonlar
+
+struct FinanceStocksSubView: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    @Binding var stockViewLayout: String
+    @Binding var editingStock: FinanceStockItem?
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                // Main Stocks Component
+                FinanceStocksSectionView(
+                    portfolio: viewModel.portfolio,
+                    processedLots: viewModel.lots,
+                    stocks: viewModel.stocks,
+                    institutions: viewModel.institutions,
+                    stockViewLayout: $stockViewLayout,
+                    onSelectStock: { stock in
+                        editingStock = stock
+                    }
+                )
+
+                Spacer().frame(height: 30)
+            }
+            .padding(.top, 16)
+        }
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Mevcut Hisseler")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Sub-Page 3: Portföy Analizi & Dağılım
+
+struct FinancePortfolioAnalysisSubView: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    @Binding var editingStock: FinanceStockItem?
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 20) {
+                FinancePortfolioAnalysisSection(
+                    portfolio: viewModel.portfolio,
+                    institutions: viewModel.institutions,
+                    instStats: viewModel.instStats,
+                    processedLots: viewModel.lots,
+                    onSelectStock: { stock in
+                        editingStock = stock
+                    }
+                )
+
+                Spacer().frame(height: 30)
+            }
+            .padding(.top, 16)
+        }
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Portföy Analizi")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Sub-Page 4: Finans İşlemleri Kayıtları
+
+struct FinanceTransactionsSubView: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
+    @Binding var filterInstitutionId: String
+    @Binding var limitCount: Int
+    @Binding var showAddSheet: Bool
+    @Binding var editingTransaction: FinanceTransactionItem?
+    @State private var searchText: String = ""
+    @State private var filterStockId: String = "all"
+    @State private var filterTxType: String = "all"
+    @State private var sortOrder: String = "newest"
+    @State private var showFilterSheet: Bool = false
+    @State private var lotToDelete: ProcessedFinanceLot? = nil
+
+    private var hasActiveFilters: Bool {
+        filterInstitutionId != "all" || filterStockId != "all" || filterTxType != "all" || sortOrder != "newest"
+    }
+
+    private var filteredLots: [ProcessedFinanceLot] {
+        var result = viewModel.lots as [ProcessedFinanceLot]
+        
+        // Sorting Order (default newest first)
+        if sortOrder != "oldest" {
+            result = result.reversed()
+        }
+
+        // Institution Filter
+        if filterInstitutionId != "all" {
+            result = result.filter { $0.institutionId == filterInstitutionId }
+        }
+
+        // Stock Filter
+        if filterStockId != "all" {
+            result = result.filter { $0.stockId == filterStockId }
+        }
+
+        // Tx Type Filter
+        if filterTxType != "all" {
+            result = result.filter { $0.type.uppercased().hasPrefix(filterTxType.uppercased().prefix(2)) }
+        }
+
+        // Search Text Filter
+        if !searchText.isEmpty {
+            result = result.filter { lot in
+                let sn = viewModel.stocks.first(where: { $0.id == lot.stockId })?.name ?? ""
+                let inn = viewModel.institutions.first(where: { $0.id == lot.institutionId })?.name ?? ""
+                return sn.localizedCaseInsensitiveContains(searchText) ||
+                       inn.localizedCaseInsensitiveContains(searchText) ||
+                       lot.date.contains(searchText) ||
+                       lot.type.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        return result
+    }
+
+    private var visibleLots: [ProcessedFinanceLot] { Array(filteredLots.prefix(limitCount)) }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Search Bar & Filter Icon Row
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Hisse, Kurum veya İşlem Ara...", text: $searchText)
+                        .font(.system(size: 14))
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.gray.opacity(0.12), lineWidth: 1))
+
+                // Filter Icon Button
+                Button(action: { showFilterSheet = true }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(hasActiveFilters ? Color.blue : Color.white)
+                            .frame(width: 42, height: 42)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(hasActiveFilters ? Color.blue : Color.gray.opacity(0.12), lineWidth: 1)
+                            )
+                            .shadow(color: .black.opacity(0.04), radius: 4, x: 0, y: 2)
+                        
+                        Image(systemName: hasActiveFilters ? "slider.horizontal.3" : "slider.horizontal.3")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(hasActiveFilters ? .white : .blue)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            // Filter Pills
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    filterPill("all", "Tümü")
+                    ForEach(viewModel.institutions) { inst in filterPill(inst.id, inst.name) }
+                }
+                .padding(.horizontal, 16)
+            }
+
+            // Limit Buttons
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Text("LİMİT:").font(.system(size: 10, weight: .bold)).foregroundColor(.secondary)
+                    ForEach([5, 10, 20, 50, 100], id: \.self) { v in limitBtn(v, "\(v)") }
+                    limitBtn(filteredLots.count, "Hepsi (\(filteredLots.count))")
+                }
+                .padding(.horizontal, 16)
+            }
+
+            if visibleLots.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 36))
+                        .foregroundColor(.gray.opacity(0.3))
+                    Text("İşlem bulunamadı.")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            } else {
+                List {
+                    ForEach(visibleLots) { lot in
+                        TxRow(
+                            lot: lot,
+                            institution: viewModel.institutions.first(where: { $0.id == lot.institutionId }),
+                            stock: viewModel.stocks.first(where: { $0.id == lot.stockId })
+                        )
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .listRowBackground(Color.white)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                lotToDelete = lot
+                            } label: {
+                                Label("Sil", systemImage: "trash")
+                            }
+                            
+                            Button {
+                                onEdit(lot)
+                            } label: {
+                                Label("Düzenle", systemImage: "pencil")
+                            }
+                            .tint(.orange)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .alert("İşlemi Sil", isPresented: Binding(
+                    get: { lotToDelete != nil },
+                    set: { if !$0 { lotToDelete = nil } }
+                )) {
+                    Button("İptal", role: .cancel) { lotToDelete = nil }
+                    Button("Sil", role: .destructive) {
+                        if let lot = lotToDelete {
+                            viewModel.deleteTransaction(id: lot.id)
+                        }
+                        lotToDelete = nil
+                    }
+                } message: {
+                    Text("Bu işlemi silmek istediğinize emin misiniz?")
+                }
+            }
+        }
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Finans İşlemleri")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showAddSheet = true }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.blue)
+                }
+            }
+        }
+        .sheet(isPresented: $showFilterSheet) {
+            FinanceFilterSheet(
+                filterInstId: $filterInstitutionId,
+                filterStockId: $filterStockId,
+                filterTxType: $filterTxType,
+                sortOrder: $sortOrder,
+                institutions: viewModel.institutions,
+                stocks: viewModel.stocks,
+                portfolio: viewModel.portfolio
+            )
+        }
+    }
+
+    private func onEdit(_ lot: ProcessedFinanceLot) {
+        if let t = viewModel.transactions.first(where: { $0.id == lot.id }) {
+            editingTransaction = t
+        }
+    }
+
+    private func filterPill(_ id: String, _ name: String) -> some View {
+        Button(action: { filterInstitutionId = id }) {
+            Text(name)
+                .font(.system(size: 13, weight: filterInstitutionId == id ? .bold : .medium))
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(filterInstitutionId == id ? Color.blue : Color.white)
+                .foregroundColor(filterInstitutionId == id ? .white : .secondary)
+                .cornerRadius(20)
+                .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+        }
+    }
+
+    private func limitBtn(_ val: Int, _ label: String) -> some View {
+        Button(action: { limitCount = val }) {
+            Text(label)
+                .font(.system(size: 10, weight: limitCount == val ? .bold : .medium))
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(limitCount == val ? Color.blue.opacity(0.12) : Color.clear)
+                .foregroundColor(limitCount == val ? .blue : .secondary).cornerRadius(5)
+        }
     }
 }
 
@@ -775,41 +1385,71 @@ struct FinanceOperationsView: View {
 struct FinanceInstitutionsSectionView: View {
     let institutions: [FinanceInstitutionItem]
     let instStats: [String: InstitutionStats]
+    let portfolio: [PortfolioItem]
+    let totalPortfolioValue: Double
     let onVisibility: () -> Void
     let onSelectInstitution: (FinanceInstitutionItem) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Kurumlar") // "Finans" olan başlık "Kurumlar" olarak değiştirildi
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .padding(.horizontal, 16)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 14) {
-                    ForEach(institutions) { inst in
-                        InstCard(institution: inst, stats: instStats[inst.id] ?? InstitutionStats())
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                onSelectInstitution(inst)
-                            }
-                    }
-                    Button(action: onVisibility) {
-                        VStack(spacing: 10) {
-                            ZStack {
-                                Circle().fill(Color.blue.opacity(0.08)).frame(width: 44, height: 44)
-                                Image(systemName: "eye.fill").foregroundColor(.blue).font(.system(size: 18))
-                            }
-                            Text("Kurum\nGorunum").font(.system(size: 11, weight: .semibold)).foregroundColor(.secondary).multilineTextAlignment(.center)
-                        }
-                        .frame(width: 90)
-                        .padding(.vertical, 20)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.15), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            VStack(spacing: 14) {
+                ForEach(institutions) { inst in
+                    InstCard(
+                        institution: inst,
+                        stats: instStats[inst.id] ?? InstitutionStats(),
+                        portfolio: portfolio,
+                        totalPortfolioValue: totalPortfolioValue
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSelectInstitution(inst)
                     }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 4)
             }
+            .padding(.horizontal, 16)
+        }
+    }
+}
+
+// MARK: - FlowLayout for Wrapping Chips
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(in: proposal.width ?? 0, subviews: subviews, spacing: spacing)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(in: bounds.width, subviews: subviews, spacing: spacing)
+        for (index, subview) in subviews.enumerated() {
+            let point = result.points[index]
+            subview.place(at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y), proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var size: CGSize = .zero
+        var points: [CGPoint] = []
+
+        init(in maxLineWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var currentX: CGFloat = 0
+            var currentY: CGFloat = 0
+            var lineHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+                if currentX + size.width > maxLineWidth && currentX > 0 {
+                    currentX = 0
+                    currentY += lineHeight + spacing
+                    lineHeight = 0
+                }
+                points.append(CGPoint(x: currentX, y: currentY))
+                lineHeight = max(lineHeight, size.height)
+                currentX += size.width + spacing
+            }
+            size = CGSize(width: maxLineWidth, height: currentY + lineHeight)
         }
     }
 }
@@ -817,52 +1457,177 @@ struct FinanceInstitutionsSectionView: View {
 struct InstCard: View {
     let institution: FinanceInstitutionItem
     let stats: InstitutionStats
+    let portfolio: [PortfolioItem]
+    let totalPortfolioValue: Double
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle().fill(Color.blue.opacity(0.08)).frame(width: 34, height: 34)
-                    if !institution.logo.isEmpty, let url = URL(string: institution.logo) {
-                        AsyncImage(url: url) { img in img.resizable().scaledToFit() }
-                            placeholder: { Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 14)) }
-                        .frame(width: 24, height: 24).clipShape(Circle())
-                    } else {
-                        Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 14))
-                    }
-                }
-                Text(institution.name).font(.system(size: 14, weight: .bold, design: .rounded)).lineLimit(1)
-                Spacer()
-            }
-            .padding(.bottom, 12)
-
-            Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 1).padding(.bottom, 10)
-
-            instRow("Net Kar/Zarar", stats.unrealizedNet, colored: true)
-            instRow("Brut Kar/Zarar", stats.unrealizedGross, colored: true)
-            instRow("Gunluk Kazanc", stats.dailyGain, colored: true)
-
-            Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 1).padding(.vertical, 8)
-
-            instRow("Portfoy Degeri", stats.totalInvestment, colored: false)
-            instRow("Brut Deger", stats.totalInvestment + stats.unrealizedGross, colored: true)
-            instRow("Net Deger", stats.totalInvestment + stats.unrealizedNet, colored: true)
-        }
-        .padding(16)
-        .frame(width: 250)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
+    private var heldItems: [PortfolioItem] {
+        portfolio.filter { ($0.institutionBreakdown[institution.id] ?? 0) > 0 }
     }
 
-    private func instRow(_ label: String, _ value: Double, colored: Bool) -> some View {
-        HStack {
-            Text(label).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary).lineLimit(1)
-            Spacer()
-            Text((colored && value > 0 ? "+" : "") + formatTL(value))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(colored ? (value > 0 ? .green : value < 0 ? .red : .secondary) : .primary)
-        }.padding(.vertical, 3)
+    private var sharePct: Double {
+        totalPortfolioValue > 0 ? (stats.currentValue / totalPortfolioValue) * 100 : 0
+    }
+
+    private var profitPct: Double {
+        stats.totalInvestment > 0 ? (stats.unrealizedNet / stats.totalInvestment) * 100 : 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Header: Logo, Name, Share Badge
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Color.blue.opacity(0.08)).frame(width: 42, height: 42)
+                    if !institution.logo.isEmpty, let url = URL(string: institution.logo) {
+                        AsyncImage(url: url) { img in img.resizable().scaledToFit() }
+                            placeholder: { Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 18)) }
+                        .frame(width: 28, height: 28).clipShape(Circle())
+                    } else {
+                        Image(systemName: "building.columns").foregroundColor(.blue).font(.system(size: 18))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(institution.name)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                    Text("\(heldItems.count) Aktif Varlık Pozisyonu")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if sharePct > 0 {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("%" + formatPctNoSymbol(sharePct))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundColor(.blue)
+                        Text("Portföy Payı")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.08))
+                    .cornerRadius(10)
+                }
+            }
+
+            // Portfolio Share Progress Bar
+            if sharePct > 0 {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.gray.opacity(0.12)).frame(height: 5)
+                        Capsule().fill(LinearGradient(colors: [Color.blue, Color(red: 0.35, green: 0.72, blue: 0.98)], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: max(8, geo.size.width * CGFloat(min(1.0, sharePct / 100.0))), height: 5)
+                    }
+                }
+                .frame(height: 5)
+            }
+
+            Divider().background(Color.gray.opacity(0.12))
+
+            // Main Portfolio Value Row (BRÜT DEĞER)
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("MEVCUT PORTFÖY DEĞERİ (BRÜT)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .tracking(0.5)
+                    Text(formatTL(stats.currentValue))
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                }
+                Spacer()
+
+                // Net Profit Pill
+                if stats.totalInvestment > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: stats.unrealizedNet >= 0 ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 10, weight: .bold))
+                        Text((stats.unrealizedNet >= 0 ? "+" : "") + formatPct(profitPct))
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(stats.unrealizedNet >= 0 ? Color.green.opacity(0.14) : Color.red.opacity(0.14))
+                    .foregroundColor(stats.unrealizedNet >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                    .cornerRadius(8)
+                }
+            }
+
+            // Detailed Metrics Grid (2 Columns)
+            VStack(spacing: 8) {
+                HStack {
+                    detailMetric("Toplam Yatırım", formatTL(stats.totalInvestment), valColor: .primary)
+                    Spacer()
+                    detailMetric("Net Kar/Zarar", (stats.unrealizedNet >= 0 ? "+" : "") + formatTL(stats.unrealizedNet), valColor: stats.unrealizedNet >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                }
+
+                HStack {
+                    detailMetric("Brüt Kar/Zarar", (stats.unrealizedGross >= 0 ? "+" : "") + formatTL(stats.unrealizedGross), valColor: stats.unrealizedGross >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                    Spacer()
+                    let tax = stats.unrealizedGross > stats.unrealizedNet ? stats.unrealizedGross - stats.unrealizedNet : 0
+                    detailMetric("Tahmini Stopaj", "-" + formatTL(tax, decimals: 2), valColor: Color(red: 0.85, green: 0.2, blue: 0.2))
+                }
+
+                HStack {
+                    detailMetric("Günlük Kazanç", (stats.dailyGain >= 0 ? "+" : "") + formatTL(stats.dailyGain), valColor: stats.dailyGain >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                    Spacer()
+                    if stats.realizedNet != 0 {
+                        detailMetric("Realize Kar", (stats.realizedNet >= 0 ? "+" : "") + formatTL(stats.realizedNet), valColor: stats.realizedNet >= 0 ? Color(red: 0.08, green: 0.6, blue: 0.25) : Color(red: 0.85, green: 0.2, blue: 0.2))
+                    } else {
+                        detailMetric("Net Değer", formatTL(stats.totalInvestment + stats.unrealizedNet), valColor: .primary)
+                    }
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.04)))
+
+            // Active Stocks Badges (Wrapping Flow Layout)
+            if !heldItems.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("PORTFÖYDEKİ VARLIKLAR:")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.secondary)
+                    
+                    FlowLayout(spacing: 6) {
+                        ForEach(heldItems) { item in
+                            HStack(spacing: 4) {
+                                Text(item.name)
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundColor(.blue)
+                                let qty = item.institutionBreakdown[institution.id] ?? 0
+                                Text("\(formatQty(qty)) adet")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.08))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 22).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color.gray.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 3)
+    }
+
+    private func detailMetric(_ title: String, _ value: String, valColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(valColor)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1108,12 +1873,11 @@ struct FinanceStocksSectionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 0) {
-                Text("Mevcut Hisseler").font(.system(size: 20, weight: .bold, design: .rounded))
                 Spacer()
                 HStack(spacing: 4) {
                     layoutBtn("Galeri", icon: "square.grid.2x2.fill", layout: "gallery")
                     layoutBtn("Tablo", icon: "list.bullet", layout: "table")
-                    layoutBtn("Ozel", icon: "tablecells.fill", layout: "special")
+                    layoutBtn("Özel", icon: "tablecells.fill", layout: "special")
                 }
             }.padding(.horizontal, 16)
 
@@ -1122,7 +1886,7 @@ struct FinanceStocksSectionView: View {
                     Spacer()
                     VStack(spacing: 8) {
                         Image(systemName: "chart.line.uptrend.xyaxis").font(.system(size: 32)).foregroundColor(.gray.opacity(0.4))
-                        Text("Aktif portfoy bulunamad\u{131}.").font(.system(size: 14)).foregroundColor(.secondary)
+                        Text("Aktif portföy bulunamadı.").font(.system(size: 14)).foregroundColor(.secondary)
                     }.padding(.vertical, 24)
                     Spacer()
                 }
@@ -1155,18 +1919,17 @@ struct StocksGalleryView: View {
     let onSelectStock: (FinanceStockItem) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 14) {
-                ForEach(portfolio) { item in
-                    let sItem = FinanceStockItem(id: item.id, name: item.name, currentPrice: item.currentPrice, previousPrice: item.previousPrice, dailyChange: item.dailyChange, updatedAt: item.updatedAt, createdAt: nil)
-                    StockGalleryCard(item: item)
-                        .onTapGesture {
-                            onSelectStock(sItem)
-                        }
-                }
+        VStack(spacing: 14) {
+            ForEach(portfolio) { item in
+                let sItem = FinanceStockItem(id: item.id, name: item.name, currentPrice: item.currentPrice, previousPrice: item.previousPrice, dailyChange: item.dailyChange, updatedAt: item.updatedAt, createdAt: nil)
+                StockGalleryCard(item: item)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onSelectStock(sItem)
+                    }
             }
-            .padding(.horizontal, 16).padding(.vertical, 4)
         }
+        .padding(.horizontal, 16)
     }
 }
 
@@ -1206,7 +1969,7 @@ struct StockGalleryCard: View {
             if item.holdingDurationDays > 0 { sRow("Elde Tutma", "\(item.holdingDurationDays) gun") }
         }
         .padding(16)
-        .frame(width: 248)
+        .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 18).fill(Color.white))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
@@ -1364,14 +2127,14 @@ struct StocksSpecialView: View {
                         Divider()
                     }
 
-                    // Group Summary Row (web projesindeki gibi gruplama altı ortalamalar ve toplamlar)
+                    // Group Summary Row
                     specialGroupSummaryRow(group.lots)
                     Divider()
 
                     Spacer().frame(height: 12)
                 }
 
-                // Global Grand Total Row (web projesindeki gibi en alttaki TOPLAM)
+                // Global Grand Total Row
                 if !allActiveLots.isEmpty {
                     specialGrandTotalRow(allActiveLots)
                 }
@@ -1718,10 +2481,10 @@ struct FinancePortfolioAnalysisSection: View {
                     : (stats.unrealizedGross - stats.unrealizedNet)
                 guard stats.currentValue > 0 || stats.totalInvestment > 0 || (isGenel && abs(profit) > 0) else { return nil }
                 return AnalysisItem(id: inst.id, name: inst.name, logo: inst.logo,
-                                    value: stats.currentValue, cost: stats.totalInvestment,
-                                    profit: profit, tax: tax, quantity: 0,
-                                    dailyGain: stats.dailyGain, percentage: 0,
-                                    isActive: stats.currentValue > 0, color: chartColors[i % chartColors.count])
+                                     value: stats.currentValue, cost: stats.totalInvestment,
+                                     profit: profit, tax: tax, quantity: 0,
+                                     dailyGain: stats.dailyGain, percentage: 0,
+                                     isActive: stats.currentValue > 0, color: chartColors[i % chartColors.count])
             }.sorted { $0.value > $1.value }
         }
     }
@@ -1820,7 +2583,7 @@ struct FinancePortfolioAnalysisSection: View {
                                     Text("GUNLUK").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 58, alignment: .trailing)
                                 }
                                 Text("PAY").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 44, alignment: .trailing)
-                                Text("NET K/Z").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 105, alignment: .trailing) // TL alt satıra geçmesin diye genişlik 80'den 105'e çıkarıldı
+                                Text("NET K/Z").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 105, alignment: .trailing)
                             }
                             .padding(.vertical, 6)
                             .padding(.bottom, 2)
@@ -1889,7 +2652,6 @@ struct FinancePortfolioAnalysisSection: View {
             Text(String(format: "%.1f%%", item.percentage))
                 .font(.system(size: 10, weight: .medium)).foregroundColor(.secondary).frame(width: 44, alignment: .trailing)
 
-            // Buradaki TL alt satıra geçmesin diye dikey hizalanmış stopaj ile birlikte genişlik 105 yapıldı
             VStack(alignment: .trailing, spacing: 1) {
                 Text((item.profit >= 0 ? "+" : "") + formatTL(item.profit))
                     .font(.system(size: 11, weight: .bold))
@@ -1975,7 +2737,7 @@ struct DonutChartView: View {
     }
 }
 
-// MARK: - Section 4: Finans Islemleri (SwiftUI standard List ile Swipe Actions düzeltildi)
+// MARK: - Section 4: Finans Islemleri
 
 struct FinanceTransactionsSectionView: View {
     let filteredLots: [ProcessedFinanceLot]
@@ -2023,15 +2785,14 @@ struct FinanceTransactionsSectionView: View {
                     Spacer()
                 }
             } else {
-                // SwiftUI standard List component used here for flawless swipeActions functionality
                 List {
                     ForEach(visibleLots) { lot in
                         TxRow(lot: lot,
-                              institution: institutions.first(where: { $0.id == lot.institutionId }),
-                              stock: stocks.first(where: { $0.id == lot.stockId }))
+                               institution: institutions.first(where: { $0.id == lot.institutionId }),
+                               stock: stocks.first(where: { $0.id == lot.stockId }))
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.white)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) { // SwiftUI native swipeAction (Sağdan sola kaydırınca)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button(role: .destructive) {
                                 lotToDelete = lot
                             } label: {
@@ -2048,7 +2809,7 @@ struct FinanceTransactionsSectionView: View {
                     }
                 }
                 .listStyle(.plain)
-                .frame(height: CGFloat(visibleLots.count * 64)) // Düzgün boyutlandırma ve scroll çakışmasını engelleme
+                .frame(height: CGFloat(visibleLots.count * 64))
                 .background(Color.white)
                 .cornerRadius(14)
                 .alert("Islemi Sil", isPresented: Binding(
@@ -2154,6 +2915,7 @@ struct TxRow: View {
 // MARK: - Add/Edit Sheet
 
 struct FinanceAddEditSheet: View {
+    @ObservedObject var viewModel: FinanceOperationsViewModel
     let transaction: FinanceTransactionItem?
     let institutions: [FinanceInstitutionItem]
     let stocks: [FinanceStockItem]
@@ -2164,6 +2926,8 @@ struct FinanceAddEditSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var selectedInstId: String = ""
     @State private var selectedStockId: String = ""
+    @State private var isAddingNewStock: Bool = false
+    @State private var newStockSymbol: String = ""
     @State private var type: String = "ALIŞ"
     @State private var quantityStr: String = ""
     @State private var priceStr: String = ""
@@ -2182,6 +2946,31 @@ struct FinanceAddEditSheet: View {
         let active = stocks.filter { activeIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
         let others = stocks.filter { !activeIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
         return active + others
+    }
+
+    private var maxSellableQuantity: Double {
+        let targetId = isAddingNewStock ? newStockSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() : selectedStockId
+        guard !targetId.isEmpty, !selectedInstId.isEmpty else { return 0 }
+        let editingId = transaction?.id
+        let sortedTrans = allTransactions.filter { !$0.deleted && $0.id != editingId }.sorted {
+            if $0.date != $1.date { return $0.date < $1.date }
+            let isAlis0 = $0.type.uppercased().hasPrefix("AL")
+            let isAlis1 = $1.type.uppercased().hasPrefix("AL")
+            if isAlis0 != isAlis1 { return isAlis0 }
+            return ($0.createdAt ?? Date.distantPast) < ($1.createdAt ?? Date.distantPast)
+        }
+        
+        var pool: Double = 0
+        for t in sortedTrans {
+            if t.stockId == targetId && t.institutionId == selectedInstId {
+                if t.type.uppercased().hasPrefix("AL") {
+                    pool += t.quantity
+                } else {
+                    pool = max(0, pool - t.quantity)
+                }
+            }
+        }
+        return pool
     }
 
     private func calculateSellTaxAndProfit(stockId: String, instId: String, qty: Double, price: Double, formTaxRate: Double) -> (tax: Double, profit: Double) {
@@ -2244,26 +3033,71 @@ struct FinanceAddEditSheet: View {
     var body: some View {
         NavigationView {
             Form {
-                Section("Islem Bilgileri") {
-                    Picker("Araci Kurum", selection: $selectedInstId) {
-                        Text("Secin...").tag("")
+                Section("İşlem Bilgileri") {
+                    Picker("Aracı Kurum", selection: $selectedInstId) {
+                        Text("Seçin...").tag("")
                         ForEach(institutions) { inst in Text(inst.name).tag(inst.id) }
                     }.pickerStyle(.menu)
 
-                    Picker("Hisse", selection: $selectedStockId) {
-                        Text("Secin...").tag("")
-                        ForEach(sortedStocks) { s in
-                            let isMevcut = portfolio.contains(where: { $0.id == s.id })
-                            Text(s.name + (isMevcut ? " (Mevcut)" : "")).tag(s.id)
+                    if !isAddingNewStock {
+                        Picker("Hisse", selection: $selectedStockId) {
+                            Text("Seçin...").tag("")
+                            ForEach(sortedStocks) { s in
+                                let isMevcut = portfolio.contains(where: { $0.id == s.id })
+                                Text(s.name + (isMevcut ? " (Mevcut)" : "")).tag(s.id)
+                            }
                         }
-                    }.pickerStyle(.menu)
-                    .onChange(of: selectedStockId) { newId in
-                        if let s = stocks.first(where: { $0.id == newId }), s.currentPrice > 0 {
-                            priceStr = fmtN(s.currentPrice, dec: 4)
-                            showStockPrice = true
-                        } else {
-                            showStockPrice = false
+                        .pickerStyle(.menu)
+                        .onChange(of: selectedStockId) { newId in
+                            if let s = stocks.first(where: { $0.id == newId }), s.currentPrice > 0 {
+                                priceStr = fmtN(s.currentPrice, dec: 4)
+                                showStockPrice = true
+                            } else {
+                                showStockPrice = false
+                            }
                         }
+
+                        Button(action: {
+                            isAddingNewStock = true
+                            selectedStockId = ""
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                Text("Yeni Hisse / Varlık Ekle")
+                                    .font(.system(size: 13, weight: .bold))
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .padding(.vertical, 2)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Yeni Hisse / Varlık Kodu")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Button(action: {
+                                    isAddingNewStock = false
+                                    newStockSymbol = ""
+                                }) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "list.bullet")
+                                            .font(.system(size: 11, weight: .bold))
+                                        Text("Listeden Seç")
+                                            .font(.system(size: 12, weight: .bold))
+                                    }
+                                    .foregroundColor(.blue)
+                                }
+                            }
+                            
+                            TextField("Örn: THYAO, GARAN, FON...", text: $newStockSymbol)
+                                .font(.system(size: 15, weight: .semibold))
+                                .autocapitalization(.allCharacters)
+                                .disableAutocorrection(true)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        .padding(.vertical, 2)
                     }
 
                     if let s = selectedStock, s.currentPrice > 0 {
@@ -2281,10 +3115,10 @@ struct FinanceAddEditSheet: View {
                                     Image(systemName: dailyChange >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
                                         .font(.system(size: 9))
                                         .foregroundColor(dailyChange >= 0 ? .green : .red)
-                                    Text(formatPct(dailyChange) + " gunluk").font(.system(size: 11)).foregroundColor(dailyChange >= 0 ? .green : .red)
+                                    Text(formatPct(dailyChange) + " günlük").font(.system(size: 11)).foregroundColor(dailyChange >= 0 ? .green : .red)
                                     Spacer()
                                     Button(action: { priceStr = fmtN(s.currentPrice, dec: 4) }) {
-                                        Text("Fiyati Kullan").font(.system(size: 11, weight: .semibold)).foregroundColor(.blue)
+                                        Text("Fiyatı Kullan").font(.system(size: 11, weight: .semibold)).foregroundColor(.blue)
                                     }
                                 }
                             }
@@ -2292,7 +3126,7 @@ struct FinanceAddEditSheet: View {
                         .listRowBackground(Color.blue.opacity(0.04))
                     }
 
-                    Picker("Islem Turu", selection: $type) {
+                    Picker("İşlem Türü", selection: $type) {
                         Text("ALIŞ").tag("ALIŞ")
                         Text("SATIŞ").tag("SATIŞ")
                     }.pickerStyle(.segmented)
@@ -2302,20 +3136,48 @@ struct FinanceAddEditSheet: View {
                 }
 
                 Section("Miktar ve Fiyat") {
-                    HStack {
+                    HStack(spacing: 8) {
                         Text("Adet").foregroundColor(.secondary)
                         Spacer()
-                        TextField("0", text: $quantityStr).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        if type.uppercased().hasPrefix("SAT") && maxSellableQuantity > 0 {
+                            Button(action: {
+                                let maxQty = maxSellableQuantity
+                                if maxQty.truncatingRemainder(dividingBy: 1) == 0 {
+                                    quantityStr = "\(Int(maxQty))"
+                                } else {
+                                    quantityStr = fmtN(maxQty, dec: 4)
+                                }
+                            }) {
+                                HStack(spacing: 3) {
+                                    Text("MAX")
+                                        .font(.system(size: 11, weight: .bold))
+                                    Text("(\(formatQty(maxSellableQuantity)))")
+                                        .font(.system(size: 10, weight: .semibold))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.12))
+                                .foregroundColor(.blue)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        TextField("0", text: $quantityStr)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(minWidth: 60)
                     }
                     HStack {
-                        Text("Islem Fiyati (TL)").foregroundColor(.secondary)
+                        Text("İşlem Fiyatı (TL)").foregroundColor(.secondary)
                         Spacer()
                         TextField("0,0000", text: $priceStr).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                     }
-                    HStack {
-                        Text("Stopaj (%)").foregroundColor(.secondary)
-                        Spacer()
-                        TextField("0", text: $taxRateStr).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                    if type.uppercased().hasPrefix("AL") {
+                        HStack {
+                            Text("Stopaj (%)").foregroundColor(.secondary)
+                            Spacer()
+                            TextField("0", text: $taxRateStr).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                        }
                     }
                 }
 
@@ -2400,10 +3262,21 @@ struct FinanceAddEditSheet: View {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Iptal") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Kaydet") {
-                        guard !selectedInstId.isEmpty, !selectedStockId.isEmpty,
+                        guard !selectedInstId.isEmpty,
                               let qty = parsedQty, let prc = parsedPrice, qty > 0, prc > 0 else { return }
+                        
+                        let targetStockId: String
+                        if isAddingNewStock {
+                            let cleanSymbol = newStockSymbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                            guard !cleanSymbol.isEmpty else { return }
+                            targetStockId = viewModel.ensureStockExists(symbolOrName: cleanSymbol, price: prc)
+                        } else {
+                            guard !selectedStockId.isEmpty else { return }
+                            targetStockId = selectedStockId
+                        }
+
                         let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-                        onSave(selectedInstId, selectedStockId, type, qty, prc, parsedTax, df.string(from: date))
+                        onSave(selectedInstId, targetStockId, type, qty, prc, parsedTax, df.string(from: date))
                         dismiss()
                     }.fontWeight(.bold)
                 }
@@ -2432,7 +3305,7 @@ struct FinanceAddEditSheet: View {
     }
 }
 
-// MARK: - Hisse Fiyatı Düzenleme Modalı (Web'deki form tasarımı ve veri güncelleme mantığıyla)
+// MARK: - Hisse Fiyatı Düzenleme Modalı
 
 struct FinanceStockPriceEditSheet: View {
     let stock: FinanceStockItem
@@ -2598,6 +3471,113 @@ struct FinanceStockPriceEditSheet: View {
                 f.minimumFractionDigits = 0
                 f.maximumFractionDigits = 4
                 priceStr = f.string(from: NSNumber(value: stock.currentPrice)) ?? "\(stock.currentPrice)"
+            }
+        }
+    }
+}
+
+// MARK: - Finans İşlemleri Filtreleme ve Sıralama Modalı
+
+struct FinanceFilterSheet: View {
+    @Binding var filterInstId: String
+    @Binding var filterStockId: String
+    @Binding var filterTxType: String
+    @Binding var sortOrder: String
+    let institutions: [FinanceInstitutionItem]
+    let stocks: [FinanceStockItem]
+    let portfolio: [PortfolioItem]
+    @Environment(\.dismiss) var dismiss
+
+    private var activeStockIds: Set<String> {
+        Set(portfolio.filter { $0.quantity > 0 }.map { $0.id })
+    }
+
+    private var activeStocks: [FinanceStockItem] {
+        stocks.filter { activeStockIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
+    }
+
+    private var otherStocks: [FinanceStockItem] {
+        stocks.filter { !activeStockIds.contains($0.id) }.sorted(by: { $0.name < $1.name })
+    }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Aracı Kurum Filtresi") {
+                    Picker("Aracı Kurum", selection: $filterInstId) {
+                        Text("Tüm Kurumlar").tag("all")
+                        ForEach(institutions) { inst in
+                            Text(inst.name).tag(inst.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Section("Hisse / Varlık Filtresi") {
+                    Picker("Hisse Seçin", selection: $filterStockId) {
+                        Text("Tüm Hisseler").tag("all")
+                        
+                        if !activeStocks.isEmpty {
+                            Section("★ MEVCUT PORTFÖYDEKİ HİSSELER") {
+                                ForEach(activeStocks) { s in
+                                    Text("★ \(s.name) (Mevcut)").tag(s.id)
+                                }
+                            }
+                        }
+                        
+                        if !otherStocks.isEmpty {
+                            Section("DİĞER HİSSELER") {
+                                ForEach(otherStocks) { s in
+                                    Text(s.name).tag(s.id)
+                                }
+                            }
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Section("İşlem Türü") {
+                    Picker("İşlem Türü", selection: $filterTxType) {
+                        Text("Tümü").tag("all")
+                        Text("ALIŞ").tag("ALIŞ")
+                        Text("SATIŞ").tag("SATIŞ")
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Tarih Sıralaması") {
+                    Picker("Sıralama", selection: $sortOrder) {
+                        Text("Yeniden Eskiye (En Yeni Üstte)").tag("newest")
+                        Text("Eskiden Yeniye (En Eski Üstte)").tag("oldest")
+                    }
+                    .pickerStyle(.menu)
+                }
+
+                Section {
+                    Button(role: .destructive, action: {
+                        filterInstId = "all"
+                        filterStockId = "all"
+                        filterTxType = "all"
+                        sortOrder = "newest"
+                    }) {
+                        HStack {
+                            Spacer()
+                            Text("Filtreleri Sıfırla")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filtrele & Sırala")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Uygula") {
+                        dismiss()
+                    }
+                    .fontWeight(.bold)
+                }
             }
         }
     }

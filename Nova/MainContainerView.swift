@@ -70,6 +70,13 @@ struct TabBarMenuConfigurator: UIViewRepresentable {
                 if let tabBarController = root as? UITabBarController ?? root.findTabBarController() {
                     let tabBar = tabBarController.tabBar
                     
+                    // Attach delegate proxy to catch re-tapping current active tab
+                    if !(tabBarController.delegate is TabBarControllerDelegateProxy) {
+                        let proxy = TabBarControllerDelegateProxy(originalDelegate: tabBarController.delegate)
+                        objc_setAssociatedObject(tabBarController, &tabBarDelegateKey, proxy, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                        tabBarController.delegate = proxy
+                    }
+                    
                     // Find all TabBarButton subviews representing tabs
                     let tabButtons = tabBar.subviews
                         .filter { String(describing: type(of: $0)).contains("TabBarButton") }
@@ -109,6 +116,32 @@ struct TabBarMenuConfigurator: UIViewRepresentable {
 }
 
 private var delegateKey: UInt8 = 0
+private var tabBarDelegateKey: UInt8 = 0
+
+// MARK: - TabBarControllerDelegateProxy implementation
+
+class TabBarControllerDelegateProxy: NSObject, UITabBarControllerDelegate {
+    weak var originalDelegate: UITabBarControllerDelegate?
+    
+    init(originalDelegate: UITabBarControllerDelegate?) {
+        self.originalDelegate = originalDelegate
+    }
+    
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        if tabBarController.selectedViewController == viewController {
+            if let index = tabBarController.viewControllers?.firstIndex(of: viewController) {
+                if index == 1 {
+                    NotificationCenter.default.post(name: Notification.Name("DictionaryTabReselected"), object: nil)
+                }
+            }
+        }
+        return originalDelegate?.tabBarController?(tabBarController, shouldSelect: viewController) ?? true
+    }
+    
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        originalDelegate?.tabBarController?(tabBarController, didSelect: viewController)
+    }
+}
 
 // MARK: - ContextMenuDelegate UIContextMenuInteractionDelegate implementation
 

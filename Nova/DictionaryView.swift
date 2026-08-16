@@ -209,319 +209,163 @@ struct DictionaryView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            if selectedTab == nil {
-                // MAIN DICTIONARY DASHBOARD (Replicated from Web App)
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Header bar with Customize Toggle Button at top right
-                        HStack {
-                            Text(isCustomizeMode ? "Sayfa Düzenleme" : "Sözlüğüm")
-                                .font(.system(size: 24, weight: .bold, design: .rounded))
-                                .foregroundColor(.black.opacity(0.85))
-                            
-                            Spacer()
-                            
-                            Button(action: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    isCustomizeMode.toggle()
-                                }
-                            }) {
-                                HStack(spacing: 5) {
-                                    Image(systemName: isCustomizeMode ? "checkmark.circle.fill" : "slider.horizontal.3")
-                                        .font(.system(size: 14, weight: .bold))
-                                    Text(isCustomizeMode ? "Bitti" : "Düzenle")
-                                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                                }
-                                .foregroundColor(isCustomizeMode ? .white : .blue)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background(isCustomizeMode ? Color.blue : Color.blue.opacity(0.1))
-                                .cornerRadius(16)
-                                .shadow(color: isCustomizeMode ? Color.blue.opacity(0.3) : Color.clear, radius: 4, x: 0, y: 2)
+        NavigationView {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    // Programmatic Native NavigationLinks
+                    NavigationLink(
+                        destination: CustomListsSubView(
+                            customLists: customLists,
+                            onSelectList: { listId in
+                                filterListId = listId
+                                selectedTab = nil
                             }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 10)
-                        
-                        if isCustomizeMode {
-                            HStack(spacing: 8) {
-                                Image(systemName: "info.circle.fill")
-                                    .foregroundColor(.blue)
-                                    .font(.system(size: 14))
-                                Text("Bölümlerin sırasını oklar ile değiştirebilir, göz butonuna basarak gizleyip gösterebilirsiniz.")
-                                    .font(.system(size: 12, design: .rounded))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(12)
-                            .background(Color.blue.opacity(0.06))
-                            .cornerRadius(14)
-                            .padding(.horizontal, 16)
-                        }
-                        
-                        // Dynamically ordered sections
-                        ForEach(sectionOrder, id: \.self) { sectionId in
-                            let isHidden = hiddenSections.contains(sectionId)
-                            
-                            if !isCustomizeMode && isHidden {
-                                // Hidden in normal view mode
-                            } else {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    // Section Edit Toolbar (Shown in Customize Mode)
-                                    if isCustomizeMode {
-                                        HStack(spacing: 10) {
-                                            Button(action: {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    toggleSectionVisibility(sectionId)
-                                                }
-                                            }) {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: isHidden ? "eye.slash.fill" : "eye.fill")
-                                                        .font(.system(size: 12, weight: .bold))
-                                                    Text(isHidden ? "Gizli" : "Görünür")
-                                                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                                                }
-                                                .foregroundColor(isHidden ? .red : .green)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
-                                                .background(isHidden ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                                                .cornerRadius(10)
-                                            }
-                                            
-                                            Text(getSectionTitle(sectionId))
-                                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                .foregroundColor(.primary)
-                                            
-                                            Spacer()
-                                            
-                                            Button(action: {
-                                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                    moveSection(id: sectionId, direction: -1)
-                                                }
-                                            }) {
-                                                Image(systemName: "chevron.up.circle.fill")
-                                                    .font(.system(size: 22))
-                                                    .foregroundColor(sectionOrder.first == sectionId ? Color.gray.opacity(0.3) : Color.blue)
-                                            }
-                                            .disabled(sectionOrder.first == sectionId)
-                                            
-                                            Button(action: {
-                                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                                    moveSection(id: sectionId, direction: 1)
-                                                }
-                                            }) {
-                                                Image(systemName: "chevron.down.circle.fill")
-                                                    .font(.system(size: 22))
-                                                    .foregroundColor(sectionOrder.last == sectionId ? Color.gray.opacity(0.3) : Color.blue)
-                                            }
-                                            .disabled(sectionOrder.last == sectionId)
-                                        }
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 6)
-                                        .background(Color.black.opacity(0.04))
-                                        .cornerRadius(12)
-                                        .padding(.horizontal, 16)
-                                    }
-                                    
-                                    // Section Content
-                                    Group {
-                                        switch sectionId {
-                                        case "banner":
-                                            bannerSectionView
-                                        case "tools":
-                                            toolsSectionView
-                                        case "words":
-                                            wordsSectionView
-                                        default:
-                                            EmptyView()
-                                        }
-                                    }
-                                    .opacity(isCustomizeMode && isHidden ? 0.4 : 1.0)
-                                    .disabled(isCustomizeMode && isHidden)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.bottom, 32)
-                }
-                .sheet(isPresented: $showFilterSheet) {
-                    FilterSheetView(
-                        filterLanguage: $filterLanguage,
-                        filterStarredOnly: $filterStarredOnly,
-                        filterSortRules: $filterSortRules,
-                        filterStatus: $filterStatus,
-                        filterListId: $filterListId,
-                        customLists: customLists,
-                        languages: uniqueLanguagesList,
-                        totalCount: allWords.count,
-                        languageCounts: languageCounts,
-                        starredCount: allWords.filter { $0.isStarred }.count,
-                        filteredCount: applyFilters(allWords).count
-                    )
-                    .presentationDetents([.medium, .large])
-                }
-                .sheet(isPresented: $showStreakModal) {
-                    DailyStatsSheetView(dailyStatsMap: dailyStatsMap, allWords: allWords)
-                        .presentationDetents([.medium, .large])
-                }
-                .sheet(item: $selectedWordForDetail) { word in
-                    WordDetailSheetView(
-                        word: word,
-                        stickyNotes: stickyNotes,
-                        allWords: allWords,
-                        onNoteAddedOrDeleted: {
-                            loadDictionaryData()
-                        }
-                    )
-                }
-            } else {
-                // SUB-PAGES (Özel Listelerim, Pratik Yap, Sticky Notlar) with Glassmorphic Header
-                VStack(spacing: 0) {
-                    // Glassmorphism Navigation Bar Header (Hidden during active test or test results)
-                    if !(selectedTab == "pratik" && practiceViewMode != "options") {
-                        HStack {
-                            Button(action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    selectedTab = nil
-                                }
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 16, weight: .bold))
-                                    Text("Geri")
-                                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                                }
-                                .foregroundColor(.blue)
-                            }
-                            
-                            Spacer()
-                            
-                            Text(subscreenTitle)
-                                .font(.system(size: 17, weight: .bold, design: .rounded))
-                                .foregroundColor(.primary)
-                            
-                            Spacer()
-                            
-                            if selectedTab == "sticky" {
-                                HStack(spacing: 14) {
-                                    Button(action: {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                            showStickySearch.toggle()
-                                        }
-                                    }) {
-                                        Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(showStickySearch ? .blue : .primary)
-                                    }
-                                    
-                                    Button(action: {
-                                        showStickySettingsSheet = true
-                                    }) {
-                                        Image(systemName: "slider.horizontal.3")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(.blue)
-                                    }
-                                }
-                            } else {
-                                Text("Geri")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.clear)
-                                    .opacity(0)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(.ultraThinMaterial)
-                        .overlay(
-                            Rectangle()
-                                .fill(Color.black.opacity(0.05))
-                                .frame(height: 0.5),
-                            alignment: .bottom
-                        )
-                    }
+                        ),
+                        tag: "lists",
+                        selection: $selectedTab
+                    ) { EmptyView() }
                     
-                    if selectedTab == "sticky" && showStickySearch {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
+                    NavigationLink(
+                        destination: PratikSubView(
+                            allWords: $allWords,
+                            customLists: customLists,
+                            stickyNotes: stickyNotes,
+                            viewMode: $practiceViewMode,
+                            onSelectWord: { word in
+                                selectedWordForDetail = word
+                            }
+                        ),
+                        tag: "pratik",
+                        selection: $selectedTab
+                    ) { EmptyView() }
+                    
+                    NavigationLink(
+                        destination: StickySubView(
+                            stickyNotes: stickyNotes,
+                            allWords: allWords,
+                            searchText: $stickySearchText,
+                            showSettingsSheet: $showStickySettingsSheet,
+                            onSelectWord: { word in
+                                selectedWordForDetail = word
+                            }
+                        ),
+                        tag: "sticky",
+                        selection: $selectedTab
+                    ) { EmptyView() }
+
+                    // Top Header Bar
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text("Sözlük Studio")
+                                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                                    .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                                
+                                Text("PRO")
+                                    .font(.system(size: 10, weight: .black, design: .rounded))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(LinearGradient(colors: [Color.blue, Color.purple], startPoint: .leading, endPoint: .trailing))
+                                    .cornerRadius(6)
+                            }
+                            Text("Kişisel Sözlük ve Öğrenme Arenası")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
                                 .foregroundColor(.secondary)
-                            TextField("Sticky Notlarda Ara...", text: $stickySearchText)
-                                .font(.system(size: 14, design: .rounded))
-                            if !stickySearchText.isEmpty {
-                                Button(action: { stickySearchText = "" }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        // Interactive Streak Flame Pill
+                        let df = DateFormatter()
+                        let _ = df.dateFormat = "yyyy-MM-dd"
+                        let todayStr = df.string(from: Date())
+                        let todayData = dailyStatsMap[todayStr] as? [String: Any] ?? [:]
+                        let todaySolvedCount = (todayData["correctCount"] as? NSNumber)?.intValue ?? (todayData["correctCount"] as? Int ?? 0)
+                        let isGoalDone = todaySolvedCount >= 100
+                        
+                        Button(action: {
+                            showStreakModal = true
+                        }) {
+                            HStack(spacing: 6) {
+                                ZStack {
+                                    Circle()
+                                        .fill(isGoalDone ? Color.red.opacity(0.2) : Color.orange.opacity(0.15))
+                                        .frame(width: 28, height: 28)
+                                    Image(systemName: isGoalDone ? "flame.fill" : "flame")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(isGoalDone ? .red : .orange)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("\(streakCount) Gün Seri")
+                                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                                    Text(isGoalDone ? "HEDEF TAMAM!" : "\(todaySolvedCount)/100 SORU")
+                                        .font(.system(size: 8, weight: .heavy))
+                                        .foregroundColor(isGoalDone ? .red : .secondary)
                                 }
                             }
+                            .padding(.leading, 6)
+                            .padding(.trailing, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white)
+                            .cornerRadius(16)
+                            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
+                            )
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white)
-                        .cornerRadius(10)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
                     
-                    // Content Area (Directly on background, full screen usage)
-                    VStack {
-                        switch selectedTab {
-                        case "lists":
-                            CustomListsContentView(
-                                customLists: customLists,
-                                onSelectList: { listId in
-                                    filterListId = listId
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        selectedTab = nil
-                                    }
-                                }
-                            )
-                        case "pratik":
-                            PratikContentView(
-                                allWords: $allWords,
-                                customLists: customLists,
-                                stickyNotes: stickyNotes,
-                                viewMode: $practiceViewMode,
-                                onSelectWord: { word in
-                                    selectedWordForDetail = word
-                                }
-                            )
-                        case "sticky":
-                            StickyContentView(
-                                stickyNotes: stickyNotes,
-                                allWords: allWords,
-                                searchText: $stickySearchText,
-                                showSettingsSheet: $showStickySettingsSheet,
-                                onSelectWord: { word in
-                                    selectedWordForDetail = word
-                                }
-                            )
-                        default:
-                            EmptyView()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Featured Word & Progress Hero Card
+                    bannerSectionView
+                    
+                    // Subpages Hub
+                    toolsSectionView
+                    
+                    // All Words & Search Section
+                    wordsSectionView
                 }
-                .sheet(item: $selectedWordForDetail) { word in
-                    WordDetailSheetView(
-                        word: word,
-                        stickyNotes: stickyNotes,
-                        allWords: allWords,
-                        onNoteAddedOrDeleted: {
-                            loadDictionaryData()
-                        }
-                    )
-                }
-                .gesture(
-                    DragGesture()
-                        .onEnded { value in
-                            if value.startLocation.x < 50 && value.translation.width > 80 {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    selectedTab = nil
-                                }
-                            }
-                        }
-                )
+                .padding(.bottom, 36)
             }
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarHidden(true)
+            .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        }
+        .navigationViewStyle(.stack)
+        .sheet(isPresented: $showFilterSheet) {
+            FilterSheetView(
+                filterLanguage: $filterLanguage,
+                filterStarredOnly: $filterStarredOnly,
+                filterSortRules: $filterSortRules,
+                filterStatus: $filterStatus,
+                filterListId: $filterListId,
+                customLists: customLists,
+                languages: uniqueLanguagesList,
+                totalCount: allWords.count,
+                languageCounts: languageCounts,
+                starredCount: allWords.filter { $0.isStarred }.count,
+                filteredCount: applyFilters(allWords).count
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showStreakModal) {
+            DailyStatsSheetView(dailyStatsMap: dailyStatsMap, allWords: allWords)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $selectedWordForDetail) { word in
+            WordDetailSheetView(
+                word: word,
+                stickyNotes: stickyNotes,
+                allWords: allWords,
+                onNoteAddedOrDeleted: {
+                    loadDictionaryData()
+                }
+            )
         }
         .background(
             LinearGradient(
@@ -560,6 +404,32 @@ struct DictionaryView: View {
             if let testId = notification.object as? String {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NotificationCenter.default.post(name: Notification.Name("RunQuickTestInPratik"), object: testId)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("DictionaryTabReselected"))) { _ in
+            if selectedWordForDetail != nil {
+                selectedWordForDetail = nil
+            }
+            if showFilterSheet {
+                showFilterSheet = false
+            }
+            if showStreakModal {
+                showStreakModal = false
+            }
+            
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                if selectedTab == "pratik" {
+                    if practiceViewMode != "options" {
+                        // Test veya test sonucunda iken -> 1 tık geriye: Pratik Yap menüsüne dön
+                        practiceViewMode = "options"
+                    } else {
+                        // Pratik Yap menüsünde iken -> 1 tık geriye: Sözlük ana sayfasına dön
+                        selectedTab = nil
+                    }
+                } else if selectedTab != nil {
+                    // Sticky Notlar veya Listelerim sayfasında iken -> 1 tık geriye: Sözlük ana sayfasına dön
+                    selectedTab = nil
                 }
             }
         }
@@ -875,140 +745,175 @@ struct DictionaryView: View {
         return result
     }
     
+    private func extractTurkishPronunciation(_ pron: String) -> String {
+        if let openParen = pron.range(of: "("), let closeParen = pron.range(of: ")") {
+            let inside = pron[openParen.upperBound..<closeParen.lowerBound].trimmingCharacters(in: .whitespaces)
+            if !inside.isEmpty { return inside }
+        }
+        let cleaned = pron.replacingOccurrences(of: "/", with: "").trimmingCharacters(in: .whitespaces)
+        return cleaned
+    }
+    
     @ViewBuilder
     private var bannerSectionView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Kelime Hazineni Genişlet")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundColor(.black.opacity(0.85))
-                    
-                    Text("Kişisel sözlüğünde kelimelerini kaydet, öğrenme aşamalarını takip et ve test çözerek bilgilerini pekiştir.")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .lineLimit(3)
-                }
-                
-                Spacer()
-                
-                // Interactive Streak Pill (Tapping opens DailyStatsSheetView)
-                let df = DateFormatter()
-                let _ = df.dateFormat = "yyyy-MM-dd"
-                let todayStr = df.string(from: Date())
-                let todayData = dailyStatsMap[todayStr] as? [String: Any] ?? [:]
-                let todaySolvedCount = (todayData["correctCount"] as? NSNumber)?.intValue ?? (todayData["correctCount"] as? Int ?? 0)
-                let isGoalDone = todaySolvedCount >= 100
-                
-                Button(action: {
-                    showStreakModal = true
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isGoalDone ? "flame.fill" : "flame")
-                            .font(.system(size: 16))
-                            .foregroundColor(isGoalDone ? .red : .gray)
+        VStack(spacing: 14) {
+            // Featured Highlight Word Banner (if words exist)
+            if let word = recentWords.first ?? allWords.first {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("GÜNÜN ÖNE ÇIKAN KELİMESİ")
+                                .font(.system(size: 9, weight: .heavy))
+                                .tracking(0.5)
+                        }
+                        .foregroundColor(.white.opacity(0.9))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.18))
+                        .cornerRadius(8)
                         
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("\(streakCount) Günlük Seri!")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .foregroundColor(isGoalDone ? .red : .primary)
-                            Text(isGoalDone ? "HEDEF TAMAM!" : "\(todaySolvedCount)/100 SORU")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(isGoalDone ? .red.opacity(0.8) : .secondary)
+                        Spacer()
+                        
+                        Button(action: {
+                            TextToSpeechManager.shared.speak(word.term)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "speaker.wave.3.fill")
+                                    .font(.system(size: 12))
+                                Text("Dinle")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.white.opacity(0.2))
+                            .cornerRadius(12)
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        isGoalDone ?
-                        Color.red.opacity(0.12) :
-                        Color.black.opacity(0.04)
-                    )
-                    .cornerRadius(14)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(isGoalDone ? Color.red.opacity(0.2) : Color.black.opacity(0.08), lineWidth: 1)
-                    )
+                    
+                    HStack(alignment: .lastTextBaseline, spacing: 10) {
+                        Text(word.term)
+                            .font(.system(size: 24, weight: .heavy, design: .rounded))
+                            .foregroundColor(.white)
+                        
+                        let trPron = extractTurkishPronunciation(word.pronunciation)
+                        if !trPron.isEmpty {
+                            Text("(\(trPron))")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        
+                        Spacer()
+                    }
+                    
+                    if !word.shortMeanings.isEmpty {
+                        Text(word.shortMeanings)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.95))
+                            .lineLimit(2)
+                    }
+                    
+                    // Stage progress bar
+                    HStack(spacing: 8) {
+                        Text("Öğrenme Aşaması")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white.opacity(0.8))
+                        
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 5)
+                                Capsule()
+                                    .fill(Color.white)
+                                    .frame(width: geo.size.width * CGFloat(Double(word.learningStage) / 10.0), height: 5)
+                            }
+                        }
+                        .frame(height: 5)
+                        
+                        Text("\(word.learningStage)/10")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(18)
+                .background(
+                    ZStack {
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.12, green: 0.16, blue: 0.36),
+                                Color(red: 0.22, green: 0.32, blue: 0.65)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
+                        Circle()
+                            .fill(Color.blue.opacity(0.3))
+                            .frame(width: 160, height: 160)
+                            .blur(radius: 30)
+                            .offset(x: 120, y: -30)
+                    }
+                )
+                .cornerRadius(22)
+                .shadow(color: Color(red: 0.12, green: 0.16, blue: 0.36).opacity(0.3), radius: 12, x: 0, y: 5)
+                .onTapGesture {
+                    selectedWordForDetail = word
                 }
             }
             
-            // 4 Stats Boxes in a Grid (2x2)
+            // 4 Stats Hub Grid (2x2)
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     statBox(title: "TOPLAM KELİME", count: totalWords, icon: "book.closed.fill", color: .blue)
-                    statBox(title: "YENİ KELİMELER", count: newWords, icon: "plus.circle.fill", color: Color(hex: "3498db"))
+                    statBox(title: "YENİ KELİMELER", count: newWords, icon: "plus.circle.fill", color: Color(red: 0.2, green: 0.6, blue: 0.9))
                 }
                 HStack(spacing: 8) {
-                    statBox(title: "ÖĞRENME AŞAMASINDA", count: learningWords, icon: "hourglass.badge.plus", color: .orange)
-                    statBox(title: "ÖĞRENİLENLER", count: learnedWords, icon: "checkmark.seal.fill", color: .green)
-                }
-            }
-            
-            // Last Added Words Section
-            VStack(alignment: .leading, spacing: 8) {
-                Text("SON EKLENEN KELİMELER")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .tracking(1)
-                
-                if recentWords.isEmpty {
-                    Text("Henüz kelime eklenmemiş.")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 4)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(recentWords) { word in
-                                HStack(spacing: 4) {
-                                    Text(word.term)
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundColor(.primary)
-                                    Text("—")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-                                    Text(word.shortMeanings)
-                                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Color.black.opacity(0.04))
-                                .cornerRadius(12)
-                                .onTapGesture {
-                                    selectedWordForDetail = word
-                                }
-                            }
-                        }
-                    }
+                    statBox(title: "ÖĞRENİLİYOR", count: learningWords, icon: "hourglass.badge.plus", color: .orange)
+                    statBox(title: "ÖĞRENİLENLER", count: learnedWords, icon: "checkmark.seal.fill", color: Color(red: 0.08, green: 0.6, blue: 0.25))
                 }
             }
         }
-        .padding(16)
-        .background(Color.white)
-        .cornerRadius(24)
-        .shadow(color: Color.black.opacity(0.03), radius: 15, x: 0, y: 5)
-        .overlay(
-            RoundedRectangle(cornerRadius: 24)
-                .stroke(Color.black.opacity(0.03), lineWidth: 1)
-        )
         .padding(.horizontal, 16)
     }
     
     @ViewBuilder
     private var toolsSectionView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("SÖZLÜK ARAÇLARI")
+        VStack(alignment: .leading, spacing: 10) {
+            Text("SÖZLÜK MODÜLLERİ & ALT SAYFALAR")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.secondary)
                 .tracking(1)
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
             
-            HStack(spacing: 10) {
-                segmentCard(title: "Özel Listelerim", tag: "lists", icon: "list.bullet.rectangle.portrait.fill", color: .blue)
-                segmentCard(title: "Pratik Yap", tag: "pratik", icon: "play.circle.fill", color: .green)
-                segmentCard(title: "Sticky Notlar", tag: "sticky", icon: "note.text", color: .orange)
+            VStack(spacing: 12) {
+                dictSubPageCard(
+                    title: "Özel Listelerim",
+                    subtitle: "\(customLists.count) Oluşturulmuş Özel Kelime Listesi",
+                    tag: "lists",
+                    icon: "folder.fill",
+                    color: .blue
+                )
+                
+                dictSubPageCard(
+                    title: "Pratik Yap & Test Arenası",
+                    subtitle: "\(allWords.count) Kelime ile Soru, Kart & Yazma Pratiği",
+                    tag: "pratik",
+                    icon: "gamecontroller.fill",
+                    color: Color(red: 0.08, green: 0.6, blue: 0.25)
+                )
+                
+                dictSubPageCard(
+                    title: "Sticky Notlarım",
+                    subtitle: "\(stickyNotes.count) Kayıtlı Özel Not ve Çalışma Kartı",
+                    tag: "sticky",
+                    icon: "note.text",
+                    color: .orange
+                )
             }
             .padding(.horizontal, 16)
         }
@@ -1017,7 +922,7 @@ struct DictionaryView: View {
     @ViewBuilder
     private var wordsSectionView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("FİLTRELEME VE ARAMA")
+            Text("KELİME KATALOĞU")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.secondary)
                 .tracking(1)
@@ -1182,68 +1087,80 @@ struct DictionaryView: View {
     
     @ViewBuilder
     private func statBox(title: String, count: Int, icon: String, color: Color) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(color.opacity(0.08))
-                    .frame(width: 32, height: 32)
+                    .fill(color.opacity(0.1))
+                    .frame(width: 34, height: 34)
                 
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(color)
             }
             
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("\(count)")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
                 
                 Text(title)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity)
-        .background(Color.black.opacity(0.015))
-        .cornerRadius(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.035)))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.black.opacity(0.03), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.gray.opacity(0.08), lineWidth: 1)
         )
     }
     
     @ViewBuilder
-    private func segmentCard(title: String, tag: String, icon: String, color: Color) -> some View {
+    private func dictSubPageCard(title: String, subtitle: String, tag: String, icon: String, color: Color) -> some View {
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                 selectedTab = tag
             }
         }) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 26))
-                    .foregroundColor(color)
-                    .frame(height: 30)
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.1))
+                        .frame(width: 42, height: 42)
+                    
+                    Image(systemName: icon)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(color)
+                }
                 
-                Text(title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                        .multilineTextAlignment(.leading)
+                    
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.gray.opacity(0.4))
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 94)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(Color.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.black.opacity(0.04), lineWidth: 1)
-                    )
-            )
-            .shadow(color: Color.black.opacity(0.02), radius: 5, x: 0, y: 3)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 20).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.gray.opacity(0.12), lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 3)
         }
     }
     
@@ -2478,20 +2395,25 @@ struct WordDetailSheetView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
                             } else {
-                                VStack(spacing: 10) {
+                                VStack(spacing: 12) {
                                     ForEach(wordNotes) { note in
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            HStack(alignment: .center) {
-                                                HStack(spacing: 6) {
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            // Header
+                                            HStack(alignment: .center, spacing: 10) {
+                                                ZStack {
+                                                    Circle()
+                                                        .fill(LinearGradient(colors: [Color.orange, Color.yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                        .frame(width: 28, height: 28)
                                                     Image(systemName: "pin.fill")
-                                                        .font(.system(size: 12))
-                                                        .foregroundColor(.orange)
-                                                    
-                                                    let cleanTitle = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                                                    Text(cleanTitle.isEmpty ? (note.wordTerm.isEmpty ? "Sticky Not" : note.wordTerm) : cleanTitle)
-                                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                                        .foregroundColor(.primary)
+                                                        .font(.system(size: 12, weight: .bold))
+                                                        .foregroundColor(.white)
                                                 }
+                                                
+                                                let cleanTitle = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                                Text(cleanTitle.isEmpty ? (note.wordTerm.isEmpty ? "Sticky Not" : note.wordTerm) : cleanTitle)
+                                                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                                                    .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                                                    .lineLimit(1)
                                                 
                                                 Spacer()
                                                 
@@ -2499,32 +2421,36 @@ struct WordDetailSheetView: View {
                                                     deleteNote(note)
                                                 }) {
                                                     Image(systemName: "trash")
-                                                        .font(.system(size: 12))
-                                                        .foregroundColor(.red.opacity(0.7))
-                                                        .padding(4)
+                                                        .font(.system(size: 12, weight: .semibold))
+                                                        .foregroundColor(.red.opacity(0.8))
+                                                        .padding(6)
+                                                        .background(Color.red.opacity(0.08))
+                                                        .cornerRadius(8)
                                                 }
                                             }
                                             
-                                            let cleanText = stripHTML(note.text)
-                                            if !cleanText.isEmpty {
-                                                Text(cleanText)
-                                                    .font(.system(size: 13, design: .rounded))
-                                                    .foregroundColor(.black.opacity(0.85))
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
+                                            // Note Text Content
+                                            StickyHTMLTextView(htmlContent: note.text, fontSize: 13.5)
+                                                .fixedSize(horizontal: false, vertical: true)
                                             
-                                            let dateStr = formatDate(note.createdAt)
-                                            Text(dateStr)
-                                                .font(.system(size: 10, design: .rounded))
-                                                .foregroundColor(.secondary)
+                                            // Creation Date Footer
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "calendar.badge.clock")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                                Text(formatDate(note.createdAt))
+                                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                                    .foregroundColor(.secondary)
+                                            }
+                                            .padding(.top, 2)
                                         }
-                                        .padding(12)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color.orange.opacity(0.04))
-                                        .cornerRadius(12)
+                                        .padding(14)
+                                        .background(Color.white)
+                                        .cornerRadius(18)
+                                        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
                                         .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Color.orange.opacity(0.15), lineWidth: 1)
+                                            RoundedRectangle(cornerRadius: 18)
+                                                .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
                                         )
                                     }
                                 }
@@ -2981,12 +2907,12 @@ struct WordCardView: View {
         }
         .padding(14)
         .background(Color.white)
-        .cornerRadius(18)
+        .cornerRadius(20)
         .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.015), radius: 5, x: 0, y: 3)
+        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
         
         if hasStickyNote {
             Circle()
@@ -3048,67 +2974,209 @@ struct CustomListsContentView: View {
     let customLists: [CustomListModel]
     let onSelectList: (String) -> Void
     
+    @State private var searchText: String = ""
+    
+    private var totalWordsInLists: Int {
+        var set = Set<String>()
+        for l in customLists {
+            l.wordIds.forEach { set.insert($0) }
+        }
+        return set.count
+    }
+    
+    private var filteredLists: [CustomListModel] {
+        if searchText.isEmpty { return customLists }
+        let q = searchText.lowercased()
+        return customLists.filter { $0.name.lowercased().contains(q) }
+    }
+    
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("KAYITLI ÖZEL LİSTELERİNİZ (\(customLists.count))")
+            VStack(alignment: .leading, spacing: 20) {
+                // Glass Hero Header Banner
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center, spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.18))
+                                .frame(width: 50, height: 50)
+                            Image(systemName: "folder.fill.badge.gearshape")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Özel Kelime Listelerim")
+                                .font(.system(size: 21, weight: .heavy, design: .rounded))
+                                .foregroundColor(.white)
+                            Text("Kelime grupların, kategorilerin ve özel çalışma koleksiyonların.")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundColor(.white.opacity(0.85))
+                                .lineLimit(2)
+                        }
+                    }
+                    
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.8))
+                            Text("\(customLists.count) Liste")
+                                .font(.system(size: 12, weight: .heavy, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(10)
+                        
+                        HStack(spacing: 6) {
+                            Image(systemName: "book.closed.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.8))
+                            Text("\(totalWordsInLists) Kelime")
+                                .font(.system(size: 12, weight: .heavy, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(10)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    ZStack {
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.12, green: 0.28, blue: 0.75),
+                                Color(red: 0.35, green: 0.48, blue: 0.95)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        
+                        Circle()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 140, height: 140)
+                            .blur(radius: 25)
+                            .offset(x: 120, y: -30)
+                    }
+                )
+                .cornerRadius(24)
+                .shadow(color: Color(red: 0.12, green: 0.28, blue: 0.75).opacity(0.3), radius: 12, x: 0, y: 5)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                
+                // Search Input
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 14))
+                    TextField("Özel listelerde ara...", text: $searchText)
+                        .font(.system(size: 14, design: .rounded))
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.white)
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.03), radius: 6, x: 0, y: 2)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
+                )
+                .padding(.horizontal, 16)
+                
+                // Section Title
+                Text("LİSTELERİM (\(filteredLists.count))")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.secondary)
                     .tracking(1)
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
                 
-                if customLists.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "list.bullet.rectangle.portrait.fill")
-                            .font(.system(size: 44))
-                            .foregroundColor(.secondary.opacity(0.5))
-                        Text("Henüz özel bir liste oluşturmadınız.")
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                if filteredLists.isEmpty {
+                    VStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.08))
+                                .frame(width: 72, height: 72)
+                            Image(systemName: "folder.badge.plus")
+                                .font(.system(size: 34))
+                                .foregroundColor(.blue)
+                        }
+                        Text("Henüz özel bir kelime listesi yok.")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                        Text("Kelime detay kartları üzerindeki liste ikonuna tıklayarak ilk listenizi hemen oluşturabilirsiniz.")
+                            .font(.system(size: 12, design: .rounded))
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 30)
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 40)
                 } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(customLists) { list in
+                    LazyVStack(spacing: 14) {
+                        ForEach(filteredLists) { list in
                             Button(action: {
                                 onSelectList(list.id)
                             }) {
-                                HStack(spacing: 14) {
+                                HStack(spacing: 16) {
                                     ZStack {
                                         Circle()
-                                            .fill(Color.blue.opacity(0.1))
-                                            .frame(width: 44, height: 44)
+                                            .fill(LinearGradient(colors: [Color.blue, Color(red: 0.35, green: 0.65, blue: 0.98)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                            .frame(width: 48, height: 48)
                                         
                                         Image(systemName: "folder.fill")
-                                            .font(.system(size: 18))
-                                            .foregroundColor(.blue)
+                                            .font(.system(size: 20, weight: .bold))
+                                            .foregroundColor(.white)
                                     }
                                     
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(list.name)
-                                            .font(.system(size: 16, weight: .bold, design: .rounded))
-                                            .foregroundColor(.primary)
+                                            .font(.system(size: 17, weight: .heavy, design: .rounded))
+                                            .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
                                         
-                                        Text("\(list.wordIds.count) Kelime İçeriyor")
-                                            .font(.system(size: 12, design: .rounded))
-                                            .foregroundColor(.secondary)
+                                        HStack(spacing: 6) {
+                                            Text("\(list.wordIds.count) KELİME")
+                                                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                                                .foregroundColor(.blue)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.blue.opacity(0.08))
+                                                .cornerRadius(6)
+                                        }
                                     }
                                     
                                     Spacer()
                                     
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundColor(.secondary.opacity(0.6))
+                                    HStack(spacing: 4) {
+                                        Text("Aç")
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .foregroundColor(.blue)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.blue)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.08))
+                                    .cornerRadius(10)
                                 }
-                                .padding(14)
+                                .padding(16)
                                 .background(Color.white)
-                                .cornerRadius(16)
-                                .shadow(color: Color.black.opacity(0.015), radius: 5, x: 0, y: 2)
+                                .cornerRadius(22)
+                                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 22)
+                                        .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
                                 )
                             }
                         }
@@ -3116,7 +3184,7 @@ struct CustomListsContentView: View {
                     .padding(.horizontal, 16)
                 }
             }
-            .padding(.bottom, 24)
+            .padding(.bottom, 32)
         }
     }
 }
@@ -3223,6 +3291,7 @@ struct PratikContentView: View {
     @State private var deletingSingleTestId: String? = nil
     @State private var showTestQuestionsSheet: Bool = false
     @State private var showUnansweredWarningAlert: Bool = false
+    @State private var showExitTestAlert: Bool = false
     @State private var selectedQuickTestId: String? = nil
     @State private var newQuickTestName: String = ""
     
@@ -3241,7 +3310,6 @@ struct PratikContentView: View {
     @FocusState private var focusedQuestionIdx: Int?
     @State private var solvedTodayCount: Int = 0
     @State private var todaySolvedWordIds: Set<String> = []
-    @State private var selectedWordForDetail: LocalWord? = nil
     @State private var revealedHintIndicesMap: [Int: [Int]] = [:]
     
     @State private var editingQuickTest: QuickTestTemplate? = nil
@@ -3366,9 +3434,6 @@ struct PratikContentView: View {
             } else {
                 optionsSetupView
             }
-        }
-        .sheet(item: $selectedWordForDetail) { word in
-            WordDetailSheetView(word: word)
         }
         .alert("Hızlı Test İsmini Düzenle", isPresented: $showRenameQuickTestAlert) {
             TextField("Hızlı test ismi...", text: $editingQuickTestName)
@@ -4067,44 +4132,60 @@ struct PratikContentView: View {
                 }
                 .padding(40)
             } else {
-                // Top Progress & Navigation Header
-                HStack {
+                // Single-Line Compact Header with Back/Exit Warning
+                HStack(spacing: 8) {
                     Button(action: {
-                        viewMode = "options"
+                        showExitTestAlert = true
                     }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Text("\(userAnswersMap.count) / \(activeQuestions.count) Yanıtlandı")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Pratik Yap")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                        }
                         .foregroundColor(.blue)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(12)
+                        .clipShape(Capsule())
+                    }
+                    
+                    Text("Test Arenası")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                    
+                    Text("\(userAnswersMap.count)/\(activeQuestions.count)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(8)
                     
                     Spacer()
                     
                     Button(action: {
                         handleFinishTestAttempt()
                     }) {
-                        Text("Testi Bitir")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.green)
-                            .cornerRadius(12)
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundColor(.green)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(Color.white)
                 .shadow(color: Color.black.opacity(0.03), radius: 3, x: 0, y: 1)
+                .alert("Testten Çıksın mı?", isPresented: $showExitTestAlert) {
+                    Button("Devam Et", role: .cancel) { }
+                    Button("Testi Sonlandır", role: .destructive) {
+                        withAnimation {
+                            viewMode = "options"
+                        }
+                    }
+                } message: {
+                    Text("Devam eden testiniz sonlandırılacaktır. İlerlemeniz kaydedilmeyecektir.")
+                }
                 
                 // Single Vertical ScrollView with ScrollViewReader for Auto-Scroll to Top
                 ScrollViewReader { scrollProxy in
@@ -4113,36 +4194,46 @@ struct PratikContentView: View {
                             ForEach(Array(activeQuestions.enumerated()), id: \.offset) { idx, q in
                                 let hasQuestionStickyNote = stickyNotes.contains(where: { $0.wordId == q.targetWord.id || (!$0.wordTerm.isEmpty && $0.wordTerm.lowercased() == q.targetWord.term.lowercased()) })
                                 VStack(alignment: .leading, spacing: 14) {
-                                    // Question Header: Index Badge + Format + Star + Hint + Detay + Speaker
+                                    // Question Header: Index Badge + Format + Native iOS Action Pills
                                     HStack {
-                                        HStack(spacing: 6) {
-                                            ZStack {
-                                                Circle()
-                                                    .fill((userAnswersMap[idx] != nil && !(userAnswersMap[idx]?.isEmpty ?? true)) ? Color.blue : Color.gray.opacity(0.2))
-                                                    .frame(width: 26, height: 26)
-                                                Text("\(idx + 1)")
-                                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                                    .foregroundColor((userAnswersMap[idx] != nil && !(userAnswersMap[idx]?.isEmpty ?? true)) ? .white : .primary)
-                                            }
+                                        HStack(spacing: 8) {
+                                            Text("Soru \(idx + 1)")
+                                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                                                .foregroundColor((userAnswersMap[idx] != nil && !(userAnswersMap[idx]?.isEmpty ?? true)) ? .blue : .primary)
                                             
-                                            Text(q.prompt == q.targetWord.shortMeanings ? "Anlam" : "Kelime")
-                                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                                .foregroundColor(.secondary)
+                                            Text("•")
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(.secondary.opacity(0.4))
+                                            
+                                            Text(q.prompt == q.targetWord.shortMeanings ? "Anlamı Bul" : "Kelimeyi Bul")
+                                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                .foregroundColor(.blue)
+                                                .padding(.horizontal, 9)
+                                                .padding(.vertical, 4)
+                                                .background(Color.blue.opacity(0.08))
+                                                .cornerRadius(10)
                                         }
                                         
                                         Spacer()
                                         
-                                        HStack(spacing: 6) {
-                                            // 1. Star Toggle Button
-                                            Button(action: {
-                                                toggleWordStar(q.targetWord)
-                                            }) {
-                                                Image(systemName: q.targetWord.isStarred ? "star.fill" : "star")
-                                                    .font(.system(size: 14))
-                                                    .foregroundColor(q.targetWord.isStarred ? .yellow : .gray.opacity(0.4))
-                                            }
+                                        HStack(spacing: 8) {
+                                            // 1. Star Toggle Button (Live state from allWords)
+                                            let liveWord = allWords.first(where: { $0.id == q.targetWord.id }) ?? allWords.first(where: { $0.term.lowercased() == q.targetWord.term.lowercased() }) ?? q.targetWord
+                                            let isStarred = liveWord.isStarred
                                             
-                                            // 2. Hint Button (💡 Dynamic: Used/Max)
+                                            Button(action: {
+                                                toggleWordStar(liveWord)
+                                            }) {
+                                                Image(systemName: isStarred ? "star.fill" : "star")
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundColor(isStarred ? .orange : .gray)
+                                                    .frame(width: 36, height: 36)
+                                                    .background(isStarred ? Color.orange.opacity(0.12) : Color.black.opacity(0.05))
+                                                    .clipShape(Circle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            
+                                            // 2. Hint Button (💡 Icon Only)
                                             let maxHints: Int = q.questionType == "written" ? q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).count : (q.questionType == "tf" ? 0 : min(2, max(0, q.options.count - 1)))
                                             let usedHints: Int = q.questionType == "written" ? (revealedHintIndicesMap[idx] ?? []).count : (hiddenOptionsMap[idx] ?? []).count
                                             
@@ -4172,44 +4263,49 @@ struct PratikContentView: View {
                                                         }
                                                     }
                                                 }) {
-                                                    HStack(spacing: 2) {
-                                                        Image(systemName: "lightbulb.fill")
-                                                            .font(.system(size: 10))
-                                                            .foregroundColor(.yellow)
-                                                        Text("\(usedHints)/\(maxHints)")
-                                                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                                                            .foregroundColor(.primary)
-                                                    }
-                                                    .padding(.horizontal, 6)
-                                                    .padding(.vertical, 3)
-                                                    .background(Color.yellow.opacity(0.15))
-                                                    .cornerRadius(8)
+                                                    Image(systemName: "lightbulb.fill")
+                                                        .font(.system(size: 16, weight: .semibold))
+                                                        .foregroundColor(usedHints >= maxHints ? .gray.opacity(0.4) : .orange)
+                                                        .frame(width: 36, height: 36)
+                                                        .background(usedHints >= maxHints ? Color.black.opacity(0.04) : Color.orange.opacity(0.12))
+                                                        .clipShape(Circle())
                                                 }
+                                                .buttonStyle(.plain)
                                                 .disabled(usedHints >= maxHints)
                                             }
                                             
                                             // 3. Kelime Detay Sheet Button (info.circle.fill)
                                             Button(action: {
-                                                selectedWordForDetail = q.targetWord
+                                                let matched = allWords.first(where: { $0.id == q.targetWord.id }) ?? allWords.first(where: { $0.term.lowercased() == q.targetWord.term.lowercased() }) ?? q.targetWord
+                                                onSelectWord(matched)
                                             }) {
                                                 Image(systemName: "info.circle.fill")
-                                                    .font(.system(size: 14))
+                                                    .font(.system(size: 17, weight: .semibold))
                                                     .foregroundColor(.blue)
+                                                    .frame(width: 36, height: 36)
+                                                    .background(Color.blue.opacity(0.1))
+                                                    .clipShape(Circle())
                                             }
+                                            .buttonStyle(.plain)
                                             
                                             // 4. Speaker Button
                                             Button(action: {
                                                 TextToSpeechManager.shared.speak(q.targetWord.term, language: q.targetWord.language)
                                             }) {
                                                 Image(systemName: "speaker.wave.2.fill")
-                                                    .font(.system(size: 14))
+                                                    .font(.system(size: 15, weight: .semibold))
+                                                    .foregroundColor(.blue)
+                                                    .frame(width: 36, height: 36)
+                                                    .background(Color.blue.opacity(0.08))
+                                                    .clipShape(Circle())
                                             }
+                                            .buttonStyle(.plain)
                                         }
                                     }
                                     
                                     // Prompt Text
                                     Text(q.prompt)
-                                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                                        .font(.system(size: 18, weight: .bold, design: .rounded))
                                         .foregroundColor(.primary)
                                         .padding(.vertical, 2)
                                     
@@ -4237,7 +4333,7 @@ struct PratikContentView: View {
                                                 .italic()
                                                 .foregroundColor(.secondary)
                                         }
-                                        .padding(.top, 4)
+                                        .padding(.top, 2)
                                     }
                                     
                                     Divider()
@@ -4292,8 +4388,8 @@ struct PratikContentView: View {
                                             .onSubmit {
                                                 if idx + 1 < activeQuestions.count {
                                                     focusedQuestionIdx = idx + 1
-                                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                                        scrollProxy.scrollTo(idx + 1, anchor: .top)
+                                                    withAnimation(.easeInOut(duration: 0.35)) {
+                                                        scrollProxy.scrollTo(idx + 1, anchor: .center)
                                                     }
                                                 } else {
                                                     focusedQuestionIdx = nil
@@ -4364,8 +4460,8 @@ struct PratikContentView: View {
                                                         } else {
                                                             userAnswersMap[idx] = tfOpt
                                                             if idx + 1 < activeQuestions.count {
-                                                                withAnimation(.easeInOut(duration: 0.3)) {
-                                                                    scrollProxy.scrollTo(idx + 1, anchor: .top)
+                                                                withAnimation(.easeInOut(duration: 0.35)) {
+                                                                    scrollProxy.scrollTo(idx + 1, anchor: .center)
                                                                 }
                                                             }
                                                         }
@@ -4416,8 +4512,8 @@ struct PratikContentView: View {
                                                     Button(action: {
                                                         userAnswersMap[idx] = isSel ? nil : title
                                                         if idx + 1 < activeQuestions.count {
-                                                            withAnimation(.easeInOut(duration: 0.3)) {
-                                                                scrollProxy.scrollTo(idx + 1, anchor: .top)
+                                                            withAnimation(.easeInOut(duration: 0.35)) {
+                                                                scrollProxy.scrollTo(idx + 1, anchor: .center)
                                                             }
                                                         }
                                                     }) {
@@ -4446,8 +4542,8 @@ struct PratikContentView: View {
                                                         } else {
                                                             userAnswersMap[idx] = optText
                                                             if idx + 1 < activeQuestions.count {
-                                                                withAnimation(.easeInOut(duration: 0.3)) {
-                                                                    scrollProxy.scrollTo(idx + 1, anchor: .top)
+                                                                withAnimation(.easeInOut(duration: 0.35)) {
+                                                                    scrollProxy.scrollTo(idx + 1, anchor: .center)
                                                                 }
                                                             }
                                                         }
@@ -4557,8 +4653,8 @@ struct PratikContentView: View {
                                     Button(action: {
                                         if let cur = focusedQuestionIdx, cur > 0 {
                                             focusedQuestionIdx = cur - 1
-                                            withAnimation(.easeInOut(duration: 0.3)) {
-                                                scrollProxy.scrollTo(cur - 1, anchor: .top)
+                                            withAnimation(.easeInOut(duration: 0.35)) {
+                                                scrollProxy.scrollTo(cur - 1, anchor: .center)
                                             }
                                         }
                                     }) {
@@ -4572,8 +4668,8 @@ struct PratikContentView: View {
                                     Button(action: {
                                         if let cur = focusedQuestionIdx, cur + 1 < activeQuestions.count {
                                             focusedQuestionIdx = cur + 1
-                                            withAnimation(.easeInOut(duration: 0.3)) {
-                                                scrollProxy.scrollTo(cur + 1, anchor: .top)
+                                            withAnimation(.easeInOut(duration: 0.35)) {
+                                                scrollProxy.scrollTo(cur + 1, anchor: .center)
                                             }
                                         }
                                     }) {
@@ -4839,9 +4935,20 @@ struct PratikContentView: View {
                                                         .background(Color.gray.opacity(0.6))
                                                         .clipShape(Circle())
                                                     
-                                                    Text(item.wordTerm)
-                                                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                                                        .foregroundColor(.primary)
+                                                        Button(action: {
+                                                         if let matched = word ?? allWords.first(where: { $0.term.lowercased() == item.wordTerm.lowercased() }) {
+                                                             onSelectWord(matched)
+                                                         }
+                                                     }) {
+                                                         HStack(spacing: 4) {
+                                                             Text(item.wordTerm)
+                                                                 .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                                 .foregroundColor(.primary)
+                                                             Image(systemName: "info.circle")
+                                                                 .font(.system(size: 12))
+                                                                 .foregroundColor(.blue.opacity(0.8))
+                                                         }
+                                                     }
                                                     
                                                     Spacer()
                                                     
@@ -5097,6 +5204,25 @@ struct PratikContentView: View {
         selectedAnswerOption = nil
         writtenInputText = ""
         isCardFlipped = false
+        hiddenOptionsMap.removeAll()
+        
+        // Shuffle question order AND answer option positions for each question
+        activeQuestions = activeQuestions.shuffled().map { q in
+            PracticeQuestionItem(
+                id: q.id,
+                wordId: q.wordId,
+                targetWord: q.targetWord,
+                questionType: q.questionType,
+                prompt: q.prompt,
+                correctAnswer: q.correctAnswer,
+                options: q.options.shuffled(),
+                isTrueStatement: q.isTrueStatement,
+                statement: q.statement,
+                exampleSentence: q.exampleSentence,
+                turkishTranslation: q.turkishTranslation
+            )
+        }
+        
         withAnimation { viewMode = "active" }
     }
     
@@ -6564,7 +6690,7 @@ struct QuickTestCardView: View {
     @ViewBuilder
     private func detailRow(icon: String, text: String, color: Color) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "number")
+            Image(systemName: icon)
                 .font(.system(size: 12))
                 .foregroundColor(color.opacity(0.8))
                 .frame(width: 14, alignment: .center)
@@ -6588,8 +6714,6 @@ struct QuickTestCardView: View {
     }
 }
 
-// MARK: - StickyContentView Implementation
-
 struct StickyContentView: View {
     let stickyNotes: [StickyNoteModel]
     let allWords: [LocalWord]
@@ -6597,8 +6721,8 @@ struct StickyContentView: View {
     @Binding var showSettingsSheet: Bool
     let onSelectWord: (LocalWord) -> Void
     
-    @AppStorage("stickyNote_displayMode") private var displayMode: String = "full" // "full" | "titleOnly" | "titleAndOneLine"
-    @State private var visibleLimit: Int = 10 // Paginated limit for infinite scrolling
+    @AppStorage("stickyNote_displayMode") private var displayMode: String = "full"
+    @State private var visibleLimit: Int = 10
     @State private var selectedNoteForDetail: StickyNoteModel? = nil
     
     private var dateFormatter: DateFormatter {
@@ -6622,42 +6746,108 @@ struct StickyContentView: View {
     var body: some View {
         VStack(spacing: 12) {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .center, spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(width: 50, height: 50)
+                                Image(systemName: "pin.fill")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Sticky Notlarım")
+                                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                                    .foregroundColor(.white)
+                                Text("Kelimelere bağladığın çalışma notların, örnek cümlelerin ve ipuçların.")
+                                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .lineLimit(2)
+                            }
+                        }
+                        
+                        HStack(spacing: 8) {
+                            Text("\(stickyNotes.count) KAYITLI ÇALIŞMA NOTU")
+                                .font(.system(size: 10, weight: .heavy, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.white.opacity(0.2))
+                                .cornerRadius(10)
+                        }
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        ZStack {
+                            LinearGradient(
+                                colors: [Color(red: 0.92, green: 0.45, blue: 0.1), Color(red: 0.98, green: 0.62, blue: 0.2)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            Circle()
+                                .fill(Color.white.opacity(0.15))
+                                .frame(width: 140, height: 140)
+                                .blur(radius: 25)
+                                .offset(x: 120, y: -30)
+                        }
+                    )
+                    .cornerRadius(24)
+                    .shadow(color: Color.orange.opacity(0.3), radius: 12, x: 0, y: 5)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    
                     HStack {
-                        Text("STICKY NOTLARIM (\(filteredNotes.count))")
+                        Text("STICKY NOTLAR (\(filteredNotes.count))")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.secondary)
                             .tracking(1)
                         Spacer()
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
                     
                     if filteredNotes.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "note.text")
-                                .font(.system(size: 44))
-                                .foregroundColor(.orange.opacity(0.6))
-                            Text("Aranan kriterlere uygun not bulunamadı.")
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                        VStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.orange.opacity(0.08))
+                                    .frame(width: 72, height: 72)
+                                Image(systemName: "note.text.badge.plus")
+                                    .font(.system(size: 34))
+                                    .foregroundColor(.orange)
+                            }
+                            Text("Henüz sticky not eklemediniz.")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
+                            Text("Kelime detay sayfasından not alarak çalışma kartlarınızı oluşturabilirsiniz.")
+                                .font(.system(size: 12, design: .rounded))
                                 .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 30)
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 40)
                     } else {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: 14) {
                             ForEach(filteredNotes.prefix(visibleLimit)) { note in
-                                VStack(alignment: .leading, spacing: 10) {
-                                    // Header: Note Title on Left + Word Badge on Right
-                                    HStack(alignment: .center, spacing: 8) {
-                                        Image(systemName: "note.text")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(.orange)
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(alignment: .center, spacing: 10) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(LinearGradient(colors: [Color.orange, Color.yellow], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                                .frame(width: 32, height: 32)
+                                            Image(systemName: "pin.fill")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundColor(.white)
+                                        }
                                         
                                         let cleanTitle = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
                                         Text(cleanTitle.isEmpty ? (note.wordTerm.isEmpty ? "Sticky Not" : note.wordTerm) : cleanTitle)
-                                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                                            .foregroundColor(.black.opacity(0.85))
+                                            .font(.system(size: 17, weight: .heavy, design: .rounded))
+                                            .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.18))
                                             .lineLimit(1)
                                         
                                         Spacer()
@@ -6673,31 +6863,23 @@ struct StickyContentView: View {
                                                     Image(systemName: "link")
                                                         .font(.system(size: 10, weight: .bold))
                                                     Text(cleanWordTerm)
-                                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                                        .font(.system(size: 11, weight: .bold, design: .rounded))
                                                 }
                                                 .foregroundColor(.blue)
-                                                .padding(.horizontal, 10)
+                                                .padding(.horizontal, 9)
                                                 .padding(.vertical, 4)
                                                 .background(Color.blue.opacity(0.08))
-                                                .cornerRadius(12)
+                                                .cornerRadius(8)
                                             }
                                         }
                                     }
                                     
-                                    // Content rendering based on Display Mode settings
                                     if displayMode == "full" {
-                                        Text(stripHTML(note.text))
-                                            .font(.system(size: 13, design: .rounded))
-                                            .foregroundColor(.black.opacity(0.8))
-                                            .lineSpacing(4)
+                                        StickyHTMLTextView(htmlContent: note.text, fontSize: 13.5)
                                     } else if displayMode == "titleAndOneLine" {
-                                        Text(stripHTML(note.text))
-                                            .font(.system(size: 13, design: .rounded))
-                                            .foregroundColor(.black.opacity(0.7))
-                                            .lineLimit(1)
+                                        StickyHTMLTextView(htmlContent: note.text, fontSize: 13, lineLimit: 1)
                                     }
                                     
-                                    // Creation Date Footer
                                     HStack(spacing: 4) {
                                         Image(systemName: "calendar.badge.clock")
                                             .font(.system(size: 10))
@@ -6708,13 +6890,13 @@ struct StickyContentView: View {
                                     }
                                     .padding(.top, 2)
                                 }
-                                .padding(14)
+                                .padding(18)
                                 .background(Color.white)
-                                .cornerRadius(16)
-                                .shadow(color: Color.black.opacity(0.015), radius: 5, x: 0, y: 2)
+                                .cornerRadius(24)
+                                .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 3)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 24)
+                                        .strokeBorder(Color.gray.opacity(0.12), lineWidth: 1)
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -6732,7 +6914,7 @@ struct StickyContentView: View {
                         .padding(.horizontal, 16)
                     }
                 }
-                .padding(.bottom, 24)
+                .padding(.bottom, 32)
             }
         }
         .sheet(item: $selectedNoteForDetail) { note in
@@ -6909,10 +7091,7 @@ struct StickyNoteDetailSheetView: View {
                             .foregroundColor(.secondary)
                             .tracking(1)
                         
-                        Text(stripHTML(note.text))
-                            .font(.system(size: 15, design: .rounded))
-                            .foregroundColor(.black.opacity(0.85))
-                            .lineSpacing(6)
+                        StickyHTMLTextView(htmlContent: note.text, fontSize: 15)
                             .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.white)
@@ -6947,6 +7126,256 @@ struct StickyNoteDetailSheetView: View {
     }
 }
 
+// MARK: - HTML Render View for Sticky Notes (Web-matched rich text formatting)
+
+struct StickyHTMLTextView: View {
+    let htmlContent: String
+    var fontSize: CGFloat = 14
+    var lineLimit: Int? = nil
+    
+    var body: some View {
+        Text(parseHTMLToAttributedString(htmlContent))
+            .lineLimit(lineLimit)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    
+    private func parseHTMLToAttributedString(_ html: String) -> AttributedString {
+        let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            var emptyAttr = AttributedString("Not içeriği yok")
+            emptyAttr.font = .system(size: fontSize, design: .rounded)
+            emptyAttr.foregroundColor = Color(red: 0.5, green: 0.5, blue: 0.55)
+            return emptyAttr
+        }
+        
+        var processed = trimmed
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "</p>", with: "\n")
+            .replacingOccurrences(of: "<p[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "</div>", with: "\n")
+            .replacingOccurrences(of: "<div[^>]*>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "</li>", with: "\n")
+            .replacingOccurrences(of: "<li[^>]*>", with: "• ", options: .regularExpression)
+            .replacingOccurrences(of: "(?<!\\*)\\*\\*(.*?)\\*\\*(?!\\*)", with: "<b>$1</b>", options: .regularExpression)
+            .replacingOccurrences(of: "(?<!\\*)\\*(.*?)\\*(?!\\*)", with: "<i>$1</i>", options: .regularExpression)
+            .replacingOccurrences(of: "~~(.*?)~~", with: "<s>$1</s>", options: .regularExpression)
+            .replacingOccurrences(of: "<strong>", with: "<b>", options: .caseInsensitive)
+            .replacingOccurrences(of: "</strong>", with: "</b>", options: .caseInsensitive)
+            .replacingOccurrences(of: "<em>", with: "<i>", options: .caseInsensitive)
+            .replacingOccurrences(of: "</em>", with: "</i>", options: .caseInsensitive)
+            .replacingOccurrences(of: "<strike>", with: "<s>", options: .caseInsensitive)
+            .replacingOccurrences(of: "</strike>", with: "</s>", options: .caseInsensitive)
+            .replacingOccurrences(of: "<del>", with: "<s>", options: .caseInsensitive)
+            .replacingOccurrences(of: "</del>", with: "</s>", options: .caseInsensitive)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+        
+        let result = NSMutableAttributedString()
+        let baseFont = UIFont.systemFont(ofSize: fontSize)
+        let boldFont = UIFont.boldSystemFont(ofSize: fontSize)
+        let italicFont = UIFont.italicSystemFont(ofSize: fontSize)
+        let boldItalicFont: UIFont = {
+            if let desc = boldFont.fontDescriptor.withSymbolicTraits(.traitItalic) {
+                return UIFont(descriptor: desc, size: fontSize)
+            }
+            return boldFont
+        }()
+        
+        var isBold = false
+        var isItalic = false
+        var isUnderline = false
+        var isStrikethrough = false
+        
+        let regex = try? NSRegularExpression(pattern: "(</?[bius]>)")
+        let nsString = processed as NSString
+        var lastIndex = 0
+        let matches = regex?.matches(in: processed, range: NSRange(location: 0, length: nsString.length)) ?? []
+        
+        for match in matches {
+            let range = match.range
+            if range.location > lastIndex {
+                let sub = nsString.substring(with: NSRange(location: lastIndex, length: range.location - lastIndex))
+                let cleanSub = sub.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                if !cleanSub.isEmpty {
+                    let font = (isBold && isItalic) ? boldItalicFont : (isBold ? boldFont : (isItalic ? italicFont : baseFont))
+                    var attrs: [NSAttributedString.Key: Any] = [
+                        .font: font,
+                        .foregroundColor: UIColor(red: 0.15, green: 0.16, blue: 0.20, alpha: 1.0)
+                    ]
+                    if isUnderline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                    if isStrikethrough { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                    result.append(NSAttributedString(string: cleanSub, attributes: attrs))
+                }
+            }
+            
+            let tag = nsString.substring(with: range).lowercased()
+            switch tag {
+            case "<b>": isBold = true
+            case "</b>": isBold = false
+            case "<i>": isItalic = true
+            case "</i>": isItalic = false
+            case "<u>": isUnderline = true
+            case "</u>": isUnderline = false
+            case "<s>": isStrikethrough = true
+            case "</s>": isStrikethrough = false
+            default: break
+            }
+            lastIndex = range.location + range.length
+        }
+        
+        if lastIndex < nsString.length {
+            let sub = nsString.substring(from: lastIndex)
+            let cleanSub = sub.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            if !cleanSub.isEmpty {
+                let font = (isBold && isItalic) ? boldItalicFont : (isBold ? boldFont : (isItalic ? italicFont : baseFont))
+                var attrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: UIColor(red: 0.15, green: 0.16, blue: 0.20, alpha: 1.0)
+                ]
+                if isUnderline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+                if isStrikethrough { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+                result.append(NSAttributedString(string: cleanSub, attributes: attrs))
+            }
+        }
+        
+        if let swiftAttr = try? AttributedString(result) {
+            return swiftAttr
+        }
+        return AttributedString(result.string)
+    }
+}
+
+
 extension Color {
     static let amber = Color(hex: "f59e0b")
+}
+
+// MARK: - Subpage Native Navigation Wrappers
+
+struct CustomListsSubView: View {
+    let customLists: [CustomListModel]
+    let onSelectList: (String) -> Void
+    
+    var body: some View {
+        CustomListsContentView(
+            customLists: customLists,
+            onSelectList: onSelectList
+        )
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Özel Listelerim")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct PratikSubView: View {
+    @Binding var allWords: [LocalWord]
+    let customLists: [CustomListModel]
+    let stickyNotes: [StickyNoteModel]
+    @Binding var viewMode: String
+    let onSelectWord: (LocalWord) -> Void
+    
+    @State private var showExitTestAlert: Bool = false
+    
+    var body: some View {
+        PratikContentView(
+            allWords: $allWords,
+            customLists: customLists,
+            stickyNotes: stickyNotes,
+            viewMode: $viewMode,
+            onSelectWord: onSelectWord
+        )
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle(viewMode == "options" ? "Pratik Yap" : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(viewMode != "options")
+        .background(
+            SwipeBackEnabler(disabled: viewMode != "options")
+        )
+        .alert("Testi Sonlandır", isPresented: $showExitTestAlert) {
+            Button("Vazgeç / Devam Et", role: .cancel) { }
+            Button("Evet, Testi Bitir", role: .destructive) {
+                withAnimation {
+                    viewMode = "options"
+                }
+            }
+        } message: {
+            Text("Devam eden testinizi sonlandırmak istediğinize emin misiniz? İlerlemeniz kaydedilecektir.")
+        }
+    }
+}
+
+struct SwipeBackEnabler: UIViewControllerRepresentable {
+    let disabled: Bool
+    func makeUIViewController(context: Context) -> UIViewController {
+        return UIViewController()
+    }
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            uiViewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = !disabled
+        }
+    }
+}
+
+struct StickySubView: View {
+    let stickyNotes: [StickyNoteModel]
+    let allWords: [LocalWord]
+    @Binding var searchText: String
+    @Binding var showSettingsSheet: Bool
+    let onSelectWord: (LocalWord) -> Void
+    
+    @State private var showStickySearchField: Bool = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            if showStickySearchField {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Sticky Notlarda Ara...", text: $searchText)
+                        .font(.system(size: 14, design: .rounded))
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white)
+                .cornerRadius(10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            StickyContentView(
+                stickyNotes: stickyNotes,
+                allWords: allWords,
+                searchText: $searchText,
+                showSettingsSheet: $showSettingsSheet,
+                onSelectWord: onSelectWord
+            )
+        }
+        .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
+        .navigationTitle("Sticky Notlarım")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button(action: {
+                    withAnimation { showStickySearchField.toggle() }
+                }) {
+                    Image(systemName: "magnifyingglass")
+                }
+                Button(action: {
+                    showSettingsSheet = true
+                }) {
+                    Image(systemName: "slider.horizontal.3")
+                }
+            }
+        }
+    }
 }

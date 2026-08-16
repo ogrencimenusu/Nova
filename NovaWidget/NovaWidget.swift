@@ -267,6 +267,7 @@ extension Color {
 // MARK: - Widget UI
 struct NovaWidgetEntryView : View {
     var entry: Provider.Entry
+    @Environment(\.widgetFamily) var family
 
     var dayNameFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -296,115 +297,168 @@ struct NovaWidgetEntryView : View {
                 .multilineTextAlignment(.center)
                 .padding()
         } else {
-            HStack(alignment: .top, spacing: 16) {
-                // Left Side: Today
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(dayNameFormatter.string(from: entry.date).uppercased())
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.red)
-                    
-                    Text(dayNumberFormatter.string(from: entry.date))
-                        .font(.system(size: 32, weight: .regular))
-                        .foregroundColor(.primary)
-                        .padding(.bottom, 4)
-                    
-                    VStack(alignment: .leading, spacing: 6) {
-                        if entry.todayNotes.isEmpty {
-                            Text("Not yok")
+            switch family {
+            case .accessoryCircular:
+                ZStack {
+                    AccessoryWidgetBackground()
+                    VStack(spacing: 0) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("\(entry.todayNotes.count)")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    }
+                }
+                .widgetURL(URL(string: (entry.todayNotes.count == 1 && entry.todayNotes[0].id != nil) ? "nova://note?id=\(entry.todayNotes[0].id!)" : "nova://notes"))
+            case .accessoryInline:
+                Group {
+                    if entry.todayNotes.isEmpty {
+                        Label("Etkinlik yok", systemImage: "calendar")
+                    } else if entry.todayNotes.count == 1 {
+                        Label(entry.todayNotes[0].title ?? "Etkinlik", systemImage: "calendar")
+                    } else {
+                        Label("\(entry.todayNotes.count) Etkinlik", systemImage: "calendar")
+                    }
+                }
+                .widgetURL(URL(string: (entry.todayNotes.count == 1 && entry.todayNotes[0].id != nil) ? "nova://note?id=\(entry.todayNotes[0].id!)" : "nova://notes"))
+            case .accessoryRectangular:
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("Bugün")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    if entry.todayNotes.isEmpty {
+                        Text("Etkinlik yok")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.secondary)
+                    } else if entry.todayNotes.count == 1 {
+                        Text(entry.todayNotes[0].title ?? "Etkinlik")
+                            .font(.system(size: 13, weight: .bold))
+                            .lineLimit(2)
+                    } else {
+                        Text("\(entry.todayNotes.count) Etkinlik")
+                            .font(.system(size: 14, weight: .bold))
+                        if let firstNoteTitle = entry.todayNotes.first?.title {
+                            Text(firstNoteTitle)
                                 .font(.system(size: 11))
-                                .foregroundColor(.gray)
-                        } else {
-                            ForEach(entry.todayNotes.prefix(2)) { note in
-                                NoteRowView(note: note)
-                            }
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                     }
-                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                // Divider
-                Divider()
-                // Right Side: Future & Overflow
-                VStack(alignment: .leading, spacing: 6) {
-                    let remainingToday = Array(entry.todayNotes.dropFirst(2))
-                    
-                    let groupedFuture = Dictionary(grouping: entry.futureNotes, by: { $0.date ?? "" })
-                    let sortedDates = groupedFuture.keys.sorted()
-                    
-                    let tomorrowString: String = {
-                        let formatter = DateFormatter()
-                        formatter.dateFormat = "yyyy-MM-dd"
-                        return formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
-                    }()
-                    
-                    if !remainingToday.isEmpty {
-                        // Bugünün taşan notlarını sağda göster
-                        ForEach(remainingToday.prefix(3)) { note in
-                            NoteRowView(note: note)
+                .widgetURL(URL(string: (entry.todayNotes.count == 1 && entry.todayNotes[0].id != nil) ? "nova://note?id=\(entry.todayNotes[0].id!)" : "nova://notes"))
+            default:
+                HStack(alignment: .top, spacing: 16) {
+                    // Left Side: Today
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(dayNameFormatter.string(from: entry.date).uppercased())
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.red)
+                        
+                        Text(dayNumberFormatter.string(from: entry.date))
+                            .font(.system(size: 32, weight: .regular))
+                            .foregroundColor(.primary)
+                            .padding(.bottom, 4)
+                        
+                        VStack(alignment: .leading, spacing: 6) {
+                            if entry.todayNotes.isEmpty {
+                                Text("Not yok")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.gray)
+                            } else {
+                                ForEach(entry.todayNotes.prefix(2)) { note in
+                                    NoteRowView(note: note)
+                                }
+                            }
                         }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    // Divider
+                    Divider()
+                    // Right Side: Future & Overflow
+                    VStack(alignment: .leading, spacing: 6) {
+                        let remainingToday = Array(entry.todayNotes.dropFirst(2))
                         
-                        // Eğer sağda sadece 1 taşan not varsa, altına 1 tane de gelecek notu sığdırabiliriz
-                        if remainingToday.count == 1, let firstDateStr = sortedDates.first, let firstNotes = groupedFuture[firstDateStr] {
-                            let isTomorrow = (firstDateStr == tomorrowString)
-                            Text(isTomorrow ? "YARIN" : customDateFormatter.string(from: firstNotes.first!.parsedDate).uppercased())
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.gray)
-                                .padding(.top, 2)
-                            
-                            NoteRowView(note: firstNotes.first!)
-                        }
-                    } else if let firstDateStr = sortedDates.first, let firstNotes = groupedFuture[firstDateStr] {
-                        let isTomorrow = (firstDateStr == tomorrowString)
+                        let groupedFuture = Dictionary(grouping: entry.futureNotes, by: { $0.date ?? "" })
+                        let sortedDates = groupedFuture.keys.sorted()
                         
-                        Text(isTomorrow ? "YARIN" : customDateFormatter.string(from: firstNotes.first!.parsedDate).uppercased())
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.gray)
+                        let tomorrowString: String = {
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "yyyy-MM-dd"
+                            return formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+                        }()
                         
-                        if firstNotes.count >= 2 {
-                            ForEach(firstNotes.prefix(2)) { note in
+                        if !remainingToday.isEmpty {
+                            // Bugünün taşan notlarını sağda göster
+                            ForEach(remainingToday.prefix(3)) { note in
                                 NoteRowView(note: note)
                             }
-                            if firstNotes.count > 2 {
-                                Text("+\(firstNotes.count - 2) adet daha etkinlik var")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.gray)
-                            }
-                        } else {
-                            // Sadece 1 not var
-                            NoteRowView(note: firstNotes.first!)
                             
-                            // İkinci güne yer var
-                            if sortedDates.count > 1 {
-                                let secondDateStr = sortedDates[1]
-                                let secondNotes = groupedFuture[secondDateStr]!
-                                let isSecondTomorrow = (secondDateStr == tomorrowString)
-                                
-                                Text(isSecondTomorrow ? "YARIN" : customDateFormatter.string(from: secondNotes.first!.parsedDate).uppercased())
+                            // Eğer sağda sadece 1 taşan not varsa, altına 1 tane de gelecek notu sığdırabiliriz
+                            if remainingToday.count == 1, let firstDateStr = sortedDates.first, let firstNotes = groupedFuture[firstDateStr] {
+                                let isTomorrow = (firstDateStr == tomorrowString)
+                                Text(isTomorrow ? "YARIN" : customDateFormatter.string(from: firstNotes.first!.parsedDate).uppercased())
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(.gray)
                                     .padding(.top, 2)
                                 
-                                NoteRowView(note: secondNotes.first!)
-                                
-                                if secondNotes.count > 1 {
-                                    Text("+\(secondNotes.count - 1) adet daha etkinlik var")
+                                NoteRowView(note: firstNotes.first!)
+                            }
+                        } else if let firstDateStr = sortedDates.first, let firstNotes = groupedFuture[firstDateStr] {
+                            let isTomorrow = (firstDateStr == tomorrowString)
+                            
+                            Text(isTomorrow ? "YARIN" : customDateFormatter.string(from: firstNotes.first!.parsedDate).uppercased())
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.gray)
+                            
+                            if firstNotes.count >= 2 {
+                                ForEach(firstNotes.prefix(2)) { note in
+                                    NoteRowView(note: note)
+                                }
+                                if firstNotes.count > 2 {
+                                    Text("+\(firstNotes.count - 2) adet daha etkinlik var")
                                         .font(.system(size: 9))
                                         .foregroundColor(.gray)
                                 }
+                            } else {
+                                // Sadece 1 not var
+                                NoteRowView(note: firstNotes.first!)
+                                
+                                // İkinci güne yer var
+                                if sortedDates.count > 1 {
+                                    let secondDateStr = sortedDates[1]
+                                    let secondNotes = groupedFuture[secondDateStr]!
+                                    let isSecondTomorrow = (secondDateStr == tomorrowString)
+                                    
+                                    Text(isSecondTomorrow ? "YARIN" : customDateFormatter.string(from: secondNotes.first!.parsedDate).uppercased())
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(.gray)
+                                        .padding(.top, 2)
+                                    
+                                    NoteRowView(note: secondNotes.first!)
+                                    
+                                    if secondNotes.count > 1 {
+                                        Text("+\(secondNotes.count - 1) adet daha etkinlik var")
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.gray)
+                                    }
+                                }
                             }
+                        } else {
+                            Text("İleriki günlerde not yok.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.gray)
+                                .padding(.top, 4)
                         }
-                    } else {
-                        Text("İleriki günlerde not yok.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.gray)
-                            .padding(.top, 4)
+                        
+                        Spacer(minLength: 0)
                     }
-                    
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
             }
         }
     }
@@ -454,7 +508,7 @@ struct NovaWidget: Widget {
                 .containerBackground(Color.white, for: .widget)
                 .widgetURL(URL(string: "nova://notes"))
         }
-        .supportedFamilies([.systemMedium]) // Only medium size as requested
+        .supportedFamilies([.systemMedium, .accessoryCircular, .accessoryRectangular, .accessoryInline])
         .configurationDisplayName("Nova Takvim")
         .description("Notlarınızı Apple Takvim formatında görün.")
     }
@@ -742,9 +796,43 @@ struct StreakWidgetEntryView : View {
         if !entry.isLoggedIn {
             Text("Lütfen giriş yapın.")
         } else {
-            if family == .systemSmall {
+            switch family {
+            case .accessoryCircular:
+                ZStack {
+                    AccessoryWidgetBackground()
+                    VStack(spacing: 0) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(entry.isGoalReached ? .orange : .primary)
+                        Text("\(entry.streakCount)")
+                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    }
+                }
+                .widgetURL(URL(string: "nova://dictionary"))
+            case .accessoryInline:
+                ViewThatFits {
+                    Label("\(entry.streakCount) Gün Seri", systemImage: "flame.fill")
+                    Text("🔥 \(entry.streakCount) Gün Seri")
+                }
+                .widgetURL(URL(string: "nova://dictionary"))
+            case .accessoryRectangular:
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "flame.fill")
+                            .foregroundColor(entry.isGoalReached ? .orange : .primary)
+                        Text("Sözlük Streak")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    Text("\(entry.streakCount) GÜN SERİ")
+                        .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    Text(entry.isGoalReached ? "Tamamlandı 🎉" : "Bugün: \(entry.todayProgress)/100")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .widgetURL(URL(string: "nova://dictionary"))
+            case .systemSmall:
                 smallStreakWidgetView
-            } else {
+            default:
                 GeometryReader { geo in
                     HStack(spacing: 0) {
                         // Sol Taraf
@@ -850,7 +938,7 @@ struct StreakWidget: Widget {
         }
         .configurationDisplayName("Sözlük Streak")
         .description("Sözlükteki günlük çalışma serinizi takip edin.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular, .accessoryInline])
         
         if #available(iOS 17.0, *) {
             return config.contentMarginsDisabled()
