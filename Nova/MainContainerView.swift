@@ -1,17 +1,19 @@
 import SwiftUI
 import UIKit
 import ObjectiveC
+import GoogleSignIn
 
 struct MainContainerView: View {
     @ObservedObject var authViewModel: AuthenticationViewModel
     @State private var selectedOption: MenuOption = .home
+    @State private var showDrivePermissionAlert = false
     
     var body: some View {
         // Native SwiftUI TabView - Side menu and custom top navigation bar removed
         TabView(selection: $selectedOption) {
             HomeView()
                 .tabItem {
-                    Label("Anasayfa", systemImage: "square.grid.2x2")
+                    Label("Anasayfa", systemImage: "house")
                 }
                 .tag(MenuOption.home)
             
@@ -48,6 +50,16 @@ struct MainContainerView: View {
             
             UITabBar.appearance().standardAppearance = appearance
             UITabBar.appearance().scrollEdgeAppearance = appearance
+            
+            checkDrivePermission()
+        }
+        .alert("Google Drive Yükleme Yetkisi", isPresented: $showDrivePermissionAlert) {
+            Button("Yetkiyi Güncelle") {
+                requestDriveScopes()
+            }
+            Button("Daha Sonra", role: .cancel) {}
+        } message: {
+            Text("Paylaşım ekranından dekont ve belge yükleyebilmek için Google Drive dosya yükleme izninin verilmesi gerekmektedir.")
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SwitchTab"))) { notification in
             if let targetOption = notification.object as? MenuOption {
@@ -56,7 +68,35 @@ struct MainContainerView: View {
                 }
             }
         }
-        .environment(\.colorScheme, .light)
+        .withAppTheme()
+    }
+    
+    private func checkDrivePermission() {
+        guard let user = GIDSignIn.sharedInstance.currentUser else { return }
+        let scopes = user.grantedScopes ?? []
+        let hasUploadScope = scopes.contains("https://www.googleapis.com/auth/drive.file") || scopes.contains("https://www.googleapis.com/auth/drive")
+        if !hasUploadScope {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                showDrivePermissionAlert = true
+            }
+        }
+    }
+    
+    private func requestDriveScopes() {
+        guard let user = GIDSignIn.sharedInstance.currentUser,
+              let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootVC = windowScene.windows.first?.rootViewController else { return }
+        
+        let scopes = [
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        user.addScopes(scopes, presenting: rootVC) { result, error in
+            if let token = result?.user.accessToken.tokenString {
+                AppGroupStorage.saveDriveToken(token)
+                print("[GoogleDrive] Yeni yükleme yetkili token kaydedildi!")
+            }
+        }
     }
 }
 

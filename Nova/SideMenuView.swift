@@ -28,7 +28,7 @@ enum MenuOption: Int, CaseIterable {
     
     var iconName: String {
         switch self {
-        case .home: return "square.grid.2x2"
+        case .home: return "house"
         case .bankOperations: return "briefcase"
         case .financeOperations: return "chart.pie"
         case .notes: return "note.text"
@@ -74,10 +74,18 @@ struct SideMenuView: View {
                             }
                         }) {
                             HStack(spacing: 16) {
-                                Image(systemName: option.iconName)
-                                    .font(.system(size: 20))
-                                    .foregroundColor(selectedOption == option ? .blue : .gray)
-                                    .frame(width: 24)
+                                if #available(iOS 17.0, *) {
+                                    Image(systemName: option.iconName)
+                                        .font(.system(size: 20))
+                                        .symbolEffect(.bounce, value: selectedOption == option)
+                                        .foregroundColor(selectedOption == option ? .blue : .gray)
+                                        .frame(width: 24)
+                                } else {
+                                    Image(systemName: option.iconName)
+                                        .font(.system(size: 20))
+                                        .foregroundColor(selectedOption == option ? .blue : .gray)
+                                        .frame(width: 24)
+                                }
                                 
                                 Text(option.title)
                                     .font(.system(size: 16, weight: selectedOption == option ? .bold : .medium, design: .rounded))

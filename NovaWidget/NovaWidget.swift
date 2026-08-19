@@ -264,6 +264,16 @@ extension Color {
     }
 }
 
+// MARK: - Widget Theme Helper
+func getWidgetColorScheme() -> ColorScheme? {
+    if let sharedDefaults = UserDefaults(suiteName: "A64NZ37MJD.group.sakyol.nova"),
+       let rawTheme = sharedDefaults.string(forKey: "app_theme_mode") {
+        if rawTheme == "light" { return .light }
+        if rawTheme == "dark" { return .dark }
+    }
+    return nil
+}
+
 // MARK: - Widget UI
 struct NovaWidgetEntryView : View {
     var entry: Provider.Entry

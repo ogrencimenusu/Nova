@@ -7,19 +7,40 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0A0E559FB5550FA06A4DB4D2 /* MainContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */; };
-		1030163FC1BE1B395C6ED68C /* DictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15185072F8B8D53AC6DF8135 /* DictionaryView.swift */; };
-		22A819C203774FF7FD7A5488 /* NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E721750EAFD80E5DA5AC75 /* NotesView.swift */; };
-		298CD09B8C28CBD77A77A1EE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */; };
+		C0EC63383034D5C40030B762 /* AppGroupStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EC63373034D5C40030B762 /* AppGroupStorage.swift */; };
+		C0EC63393034D5C40030B762 /* AppGroupStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EC63373034D5C40030B762 /* AppGroupStorage.swift */; };
+		C0EC63363034D5C40030B762 /* GoogleDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541F276295BE891846424DF2 /* GoogleDriveService.swift */; };
+		C0EC63303034D5C40030B762 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 637AAC74CB559267BE09B1FE /* FirebaseCore */; };
+		C0EC63313034D5C40030B762 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */; };
+		C0EC63323034D5C40030B762 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D60D300CFAB1009287D7 /* FirebaseFirestore */; };
+		C0EC63333034D5C40030B762 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = B12261CCAE285434D1199B87 /* GoogleSignIn */; };
+		C0EC63343034D5C40030B762 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */; };
+		C0EC63353034D5C40030B762 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */; };
+		0BC16539956A5C0B120FA125 /* Nova/Features/Dictionary/DictionaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0541752D25BB2DEF6FA07B53 /* Nova/Features/Dictionary/DictionaryView.swift */; };
+		0E9D0443B66025C7709859F3 /* Nova/RecentlyDeletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B6DEB9FCABF86E9F0EE52F2 /* Nova/RecentlyDeletedView.swift */; };
+		1E0C21546A77A1BB3E827974 /* Nova/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D61D20BEFB4BC10E4AFB1E48 /* Nova/SettingsView.swift */; };
+		27C26C01755BC0080D40C4C8 /* Nova/Features/Bank/BankOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACCF4358AA702C4EB43F251 /* Nova/Features/Bank/BankOperationsView.swift */; };
 		361A3DF74FC83684535C974B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */; };
-		52019022716C6BEF2018B2E1 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 026A2F3A91C77E08206D7CFE /* LoginView.swift */; };
-		5CE76EEEAE2B5DB873E1952D /* NovaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70504225547C20F1A0AED13 /* NovaApp.swift */; };
-		6B57BDD24561AA42977AC76A /* AuthenticationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */; };
-		713D77D04A7362B96883A3A6 /* BankOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */; };
-		9A0DAE14D32268F6E48A22E0 /* FinanceOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */; };
+		3B6166B0BEF296AA56DF6EC2 /* Nova/MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F0E7611DA2A5BEA6984C5F /* Nova/MainTabView.swift */; };
+		423317D83EC569D717FC7250 /* Nova/Features/Notes/NotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47DE15F93A47C22F79F428F1 /* Nova/Features/Notes/NotesView.swift */; };
+		4AE9A029592754DEFBA0BBE4 /* Nova/Features/Finance/FinanceOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC02CBB23A853530D8D575FB /* Nova/Features/Finance/FinanceOperationsView.swift */; };
+		535A390EBCD72FDAE6FC3840 /* Nova/Features/Bank/GoogleDrivePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE97647735D98B1E960C68A3 /* Nova/Features/Bank/GoogleDrivePickerView.swift */; };
+		5E7F427EFECCE91467F45FDB /* Nova/Core/ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0939736A53F6BA4D81C06B9E /* Nova/Core/ThemeManager.swift */; };
+		61118187E48894D7A48F9DDF /* Nova/NovaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7978D17DEFE6239BACFA80C7 /* Nova/NovaApp.swift */; };
+		6892357043646CD79A01B522 /* Nova/TagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E27D5EBABE94783607A7C0E7 /* Nova/TagsView.swift */; };
+		77CFEABF18C190BA4BA3899A /* Nova/Features/Dictionary/FilterSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE179015A85F773571559C0E /* Nova/Features/Dictionary/FilterSheetView.swift */; };
+		84D207E0E108F1F57A9168D1 /* Nova/Core/Services/GoogleDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 541F276295BE891846424DF2 /* Nova/Core/Services/GoogleDriveService.swift */; };
+		92DBE566552F2E6CF6ECE755 /* Nova/Models/DictionaryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5508E264252F026D8BFFCC2C /* Nova/Models/DictionaryModels.swift */; };
+		93A3A77785CEFB1A324E6F12 /* Nova/SideMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977738D7B5B911C414B779A8 /* Nova/SideMenuView.swift */; };
+		996D84599D2960B4F62A1744 /* Nova/Models/BankModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 540BE06CA092729801F8D4CF /* Nova/Models/BankModels.swift */; };
 		A071D7E6517925E4A9E31368 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 637AAC74CB559267BE09B1FE /* FirebaseCore */; };
+		A733516ACE8CA4E415BD1C7D /* Nova/Models/FinanceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7E0803239D9E3DAF1D7FC73 /* Nova/Models/FinanceModels.swift */; };
+		B04B1429817D9C9A3ED58648 /* Nova/AuthenticationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D098B46D1BA4A80B6EB147D6 /* Nova/AuthenticationViewModel.swift */; };
+		B279AAEBF7A9485197E1E51D /* Nova/Features/Notes/NoteCardRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD685675FFA2B305FCC9B18C /* Nova/Features/Notes/NoteCardRow.swift */; };
+		B4E41826666BF28396FA5390 /* Nova/Models/NoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAB599DBB469DE0B0245B306 /* Nova/Models/NoteModels.swift */; };
 		B67EDCE5285EDF8AC40EBF93 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */; };
-		BD755815B3EE2EB7E0EED21C /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46EA1B230E84173EFBBC015 /* HomeView.swift */; };
+		B89D14730226B74C6CC0D03E /* Nova/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97EC6EF86529C40037880C94 /* Nova/ContentView.swift */; };
+		BBEA6778E61D880DA3BD3D2D /* Nova/Core/HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53FBBD11E602548F0F8F8FD /* Nova/Core/HapticManager.swift */; };
 		C0D3D5F6300CF69E009287D7 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C0D3D5F5300CF69E009287D7 /* WidgetKit.framework */; };
 		C0D3D5F8300CF69E009287D7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */; };
 		C0D3D605300CF6A0009287D7 /* NovaWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -29,13 +50,13 @@
 		C0D3D614300CFAE0009287D7 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = C0D3D613300CFAE0009287D7 /* FirebaseFirestore */; };
 		C0D3D615300CFED1009287D7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */; };
 		C0D3D616300CFED1009287D7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */; };
-		CA60C501AD1A716BE86C3EC6 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59874D693C11AB6A5CE5D36E /* MainTabView.swift */; };
-		D1F1ADBF5DC874E966E49C7B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */; };
+		C0EC631F3034D5C40030B762 /* NovaShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0EC63153034D5C40030B762 /* NovaShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D939CAF4CADFE54B5CEFE873 /* Nova/Features/Home/HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100A6B9913F512B928D5AD4 /* Nova/Features/Home/HomeView.swift */; };
 		E03565542FCC56C52CB1C85F /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = B12261CCAE285434D1199B87 /* GoogleSignIn */; };
-		E41BAF3DCBA5BE28C7509336 /* SideMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFD221A99E08848AA622855 /* SideMenuView.swift */; };
-		EA8E51CDCDAAA2714B377AEA /* TagsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */; };
 		EE7D6942DF86C7B353FE44A3 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */; };
-		F1CA8B158E0B4EC1C0C05862 /* RecentlyDeletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */; };
+		FCB6EE8E7042DEBF6D03D77F /* Nova/LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 246BC965CFC7499059D07D6D /* Nova/LoginView.swift */; };
+		FE759C8297C1B30E01409071 /* Nova/Features/Dictionary/DailyStatsSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4C93ED1C13ADAE942C82D0 /* Nova/Features/Dictionary/DailyStatsSheetView.swift */; };
+		FFC2A838A320371B9F50E1E9 /* Nova/MainContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 948E7BF29DADF28FB2B80234 /* Nova/MainContainerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,6 +67,13 @@
 			remoteGlobalIDString = C0D3D5F2300CF69E009287D7;
 			remoteInfo = NovaWidgetExtension;
 		};
+		C0EC631D3034D5C40030B762 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F545DF30FAB818DABAFA99F1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0EC63143034D5C40030B762;
+			remoteInfo = NovaShareExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -55,6 +83,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				C0EC631F3034D5C40030B762 /* NovaShareExtension.appex in Embed Foundation Extensions */,
 				C0D3D605300CF6A0009287D7 /* NovaWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -63,30 +92,43 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		026A2F3A91C77E08206D7CFE /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
-		15185072F8B8D53AC6DF8135 /* DictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryView.swift; sourceTree = "<group>"; };
+		C0EC63373034D5C40030B762 /* Nova/Core/Services/AppGroupStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Core/Services/AppGroupStorage.swift; sourceTree = "<group>"; };
+		0541752D25BB2DEF6FA07B53 /* Nova/Features/Dictionary/DictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Dictionary/DictionaryView.swift; sourceTree = "<group>"; };
+		0939736A53F6BA4D81C06B9E /* Nova/Core/ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Core/ThemeManager.swift; sourceTree = "<group>"; };
 		1B0726CC913A2D745F9ADBB9 /* Nova.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nova.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinanceOperationsView.swift; sourceTree = "<group>"; };
-		2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainContainerView.swift; sourceTree = "<group>"; };
-		2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentlyDeletedView.swift; sourceTree = "<group>"; };
-		4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagsView.swift; sourceTree = "<group>"; };
-		59874D693C11AB6A5CE5D36E /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationViewModel.swift; sourceTree = "<group>"; };
+		246BC965CFC7499059D07D6D /* Nova/LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/LoginView.swift; sourceTree = "<group>"; };
+		47DE15F93A47C22F79F428F1 /* Nova/Features/Notes/NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Notes/NotesView.swift; sourceTree = "<group>"; };
+		540BE06CA092729801F8D4CF /* Nova/Models/BankModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Models/BankModels.swift; sourceTree = "<group>"; };
+		541F276295BE891846424DF2 /* Nova/Core/Services/GoogleDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Core/Services/GoogleDriveService.swift; sourceTree = "<group>"; };
+		5508E264252F026D8BFFCC2C /* Nova/Models/DictionaryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Models/DictionaryModels.swift; sourceTree = "<group>"; };
+		5ACCF4358AA702C4EB43F251 /* Nova/Features/Bank/BankOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Bank/BankOperationsView.swift; sourceTree = "<group>"; };
+		6B4C93ED1C13ADAE942C82D0 /* Nova/Features/Dictionary/DailyStatsSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Dictionary/DailyStatsSheetView.swift; sourceTree = "<group>"; };
+		73F0E7611DA2A5BEA6984C5F /* Nova/MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/MainTabView.swift; sourceTree = "<group>"; };
+		7978D17DEFE6239BACFA80C7 /* Nova/NovaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/NovaApp.swift; sourceTree = "<group>"; };
+		7B6DEB9FCABF86E9F0EE52F2 /* Nova/RecentlyDeletedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/RecentlyDeletedView.swift; sourceTree = "<group>"; };
 		94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
-		A46EA1B230E84173EFBBC015 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		AAFD221A99E08848AA622855 /* SideMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideMenuView.swift; sourceTree = "<group>"; };
+		948E7BF29DADF28FB2B80234 /* Nova/MainContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/MainContainerView.swift; sourceTree = "<group>"; };
+		977738D7B5B911C414B779A8 /* Nova/SideMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/SideMenuView.swift; sourceTree = "<group>"; };
+		97EC6EF86529C40037880C94 /* Nova/ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/ContentView.swift; sourceTree = "<group>"; };
+		A100A6B9913F512B928D5AD4 /* Nova/Features/Home/HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Home/HomeView.swift; sourceTree = "<group>"; };
+		AD685675FFA2B305FCC9B18C /* Nova/Features/Notes/NoteCardRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Notes/NoteCardRow.swift; sourceTree = "<group>"; };
+		AE179015A85F773571559C0E /* Nova/Features/Dictionary/FilterSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Dictionary/FilterSheetView.swift; sourceTree = "<group>"; };
 		B12EDC68B5E90E03CA91C90D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BC02CBB23A853530D8D575FB /* Nova/Features/Finance/FinanceOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Finance/FinanceOperationsView.swift; sourceTree = "<group>"; };
 		BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NovaWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0D3D5F5300CF69E009287D7 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		C0D3D60B300CF6DA009287D7 /* Nova.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Nova.entitlements; sourceTree = "<group>"; };
 		C0D3D60C300CF721009287D7 /* NovaWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NovaWidgetExtension.entitlements; sourceTree = "<group>"; };
-		D70504225547C20F1A0AED13 /* NovaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NovaApp.swift; sourceTree = "<group>"; };
-		D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankOperationsView.swift; sourceTree = "<group>"; };
-		D8E721750EAFD80E5DA5AC75 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesView.swift; sourceTree = "<group>"; };
+		C0EC63153034D5C40030B762 /* NovaShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NovaShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7E0803239D9E3DAF1D7FC73 /* Nova/Models/FinanceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Models/FinanceModels.swift; sourceTree = "<group>"; };
+		D098B46D1BA4A80B6EB147D6 /* Nova/AuthenticationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/AuthenticationViewModel.swift; sourceTree = "<group>"; };
+		D53FBBD11E602548F0F8F8FD /* Nova/Core/HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Core/HapticManager.swift; sourceTree = "<group>"; };
+		D61D20BEFB4BC10E4AFB1E48 /* Nova/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/SettingsView.swift; sourceTree = "<group>"; };
+		DAB599DBB469DE0B0245B306 /* Nova/Models/NoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Models/NoteModels.swift; sourceTree = "<group>"; };
+		E27D5EBABE94783607A7C0E7 /* Nova/TagsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/TagsView.swift; sourceTree = "<group>"; };
+		EE97647735D98B1E960C68A3 /* Nova/Features/Bank/GoogleDrivePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nova/Features/Bank/GoogleDrivePickerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -97,10 +139,18 @@
 			);
 			target = C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */;
 		};
+		C0EC63223034D5C40030B762 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = C0EC63143034D5C40030B762 /* NovaShareExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C0D3D5F9300CF69E009287D7 /* NovaWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C0D3D606300CF6A0009287D7 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = NovaWidget; sourceTree = "<group>"; };
+		C0EC63163034D5C40030B762 /* NovaShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (C0EC63223034D5C40030B762 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = NovaShareExtension; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,6 +164,18 @@
 				C0D3D614300CFAE0009287D7 /* FirebaseFirestore in Frameworks */,
 				C0D3D5F6300CF69E009287D7 /* WidgetKit.framework in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0EC63123034D5C40030B762 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0EC63303034D5C40030B762 /* FirebaseCore in Frameworks */,
+				C0EC63313034D5C40030B762 /* FirebaseAuth in Frameworks */,
+				C0EC63323034D5C40030B762 /* FirebaseFirestore in Frameworks */,
+				C0EC63333034D5C40030B762 /* GoogleSignIn in Frameworks */,
+				C0EC63343034D5C40030B762 /* GoogleSignInSwift in Frameworks */,
+);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E0FD43DC449BA0E8F4915AAD /* Frameworks */ = {
@@ -136,6 +198,7 @@
 			children = (
 				1B0726CC913A2D745F9ADBB9 /* Nova.app */,
 				C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */,
+				C0EC63153034D5C40030B762 /* NovaShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -145,23 +208,8 @@
 			children = (
 				C0D3D60B300CF6DA009287D7 /* Nova.entitlements */,
 				BDBA7339CFA5AA4A94EEF81A /* Assets.xcassets */,
-				7242FEB49420F771565F14F8 /* AuthenticationViewModel.swift */,
-				D7E761F70B6B4C5C4E04150C /* BankOperationsView.swift */,
-				B8ED3923A9CDB9F41ADA0EAE /* ContentView.swift */,
-				15185072F8B8D53AC6DF8135 /* DictionaryView.swift */,
-				1B15557F80A92EA960BEC6C9 /* FinanceOperationsView.swift */,
 				94824CD82F2482BECE10EB48 /* GoogleService-Info.plist */,
-				A46EA1B230E84173EFBBC015 /* HomeView.swift */,
 				B12EDC68B5E90E03CA91C90D /* Info.plist */,
-				026A2F3A91C77E08206D7CFE /* LoginView.swift */,
-				2A778FC88DB6810F669ECAD7 /* MainContainerView.swift */,
-				59874D693C11AB6A5CE5D36E /* MainTabView.swift */,
-				D8E721750EAFD80E5DA5AC75 /* NotesView.swift */,
-				D70504225547C20F1A0AED13 /* NovaApp.swift */,
-				3BE59B7D9A6D2D8EB6C9A7DF /* RecentlyDeletedView.swift */,
-				2B3BAC12C2832C91D7D2D4C4 /* SettingsView.swift */,
-				AAFD221A99E08848AA622855 /* SideMenuView.swift */,
-				4E9AC39DD5C7071DDF73E3D1 /* TagsView.swift */,
 			);
 			path = Nova;
 			sourceTree = "<group>";
@@ -172,8 +220,10 @@
 				C0D3D60C300CF721009287D7 /* NovaWidgetExtension.entitlements */,
 				572CB3CFDB31AD33B6DEA825 /* Nova */,
 				C0D3D5F9300CF69E009287D7 /* NovaWidget */,
+				C0EC63163034D5C40030B762 /* NovaShareExtension */,
 				C0D3D5F4300CF69E009287D7 /* Frameworks */,
 				1BE92766E93A3F687D850524 /* Products */,
+				C0EC63063034D4A50030B762 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -184,6 +234,39 @@
 				C0D3D5F7300CF69E009287D7 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C0EC63063034D4A50030B762 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				D098B46D1BA4A80B6EB147D6 /* Nova/AuthenticationViewModel.swift */,
+				540BE06CA092729801F8D4CF /* Nova/Models/BankModels.swift */,
+				5ACCF4358AA702C4EB43F251 /* Nova/Features/Bank/BankOperationsView.swift */,
+				97EC6EF86529C40037880C94 /* Nova/ContentView.swift */,
+				6B4C93ED1C13ADAE942C82D0 /* Nova/Features/Dictionary/DailyStatsSheetView.swift */,
+				5508E264252F026D8BFFCC2C /* Nova/Models/DictionaryModels.swift */,
+				0541752D25BB2DEF6FA07B53 /* Nova/Features/Dictionary/DictionaryView.swift */,
+				AE179015A85F773571559C0E /* Nova/Features/Dictionary/FilterSheetView.swift */,
+				C7E0803239D9E3DAF1D7FC73 /* Nova/Models/FinanceModels.swift */,
+				BC02CBB23A853530D8D575FB /* Nova/Features/Finance/FinanceOperationsView.swift */,
+				EE97647735D98B1E960C68A3 /* Nova/Features/Bank/GoogleDrivePickerView.swift */,
+				541F276295BE891846424DF2 /* Nova/Core/Services/GoogleDriveService.swift */,
+				D53FBBD11E602548F0F8F8FD /* Nova/Core/HapticManager.swift */,
+				A100A6B9913F512B928D5AD4 /* Nova/Features/Home/HomeView.swift */,
+				246BC965CFC7499059D07D6D /* Nova/LoginView.swift */,
+				948E7BF29DADF28FB2B80234 /* Nova/MainContainerView.swift */,
+				73F0E7611DA2A5BEA6984C5F /* Nova/MainTabView.swift */,
+				AD685675FFA2B305FCC9B18C /* Nova/Features/Notes/NoteCardRow.swift */,
+				DAB599DBB469DE0B0245B306 /* Nova/Models/NoteModels.swift */,
+				47DE15F93A47C22F79F428F1 /* Nova/Features/Notes/NotesView.swift */,
+				7978D17DEFE6239BACFA80C7 /* Nova/NovaApp.swift */,
+				7B6DEB9FCABF86E9F0EE52F2 /* Nova/RecentlyDeletedView.swift */,
+				D61D20BEFB4BC10E4AFB1E48 /* Nova/SettingsView.swift */,
+				977738D7B5B911C414B779A8 /* Nova/SideMenuView.swift */,
+				E27D5EBABE94783607A7C0E7 /* Nova/TagsView.swift */,
+				0939736A53F6BA4D81C06B9E /* Nova/Core/ThemeManager.swift */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -202,6 +285,7 @@
 			);
 			dependencies = (
 				C0D3D604300CF6A0009287D7 /* PBXTargetDependency */,
+				C0EC631E3034D5C40030B762 /* PBXTargetDependency */,
 			);
 			name = Nova;
 			packageProductDependencies = (
@@ -240,6 +324,35 @@
 			productReference = C0D3D5F3300CF69E009287D7 /* NovaWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		C0EC63143034D5C40030B762 /* NovaShareExtension */ = {
+			isa = PBXNativeTarget;
+			packageProductDependencies = (
+				637AAC74CB559267BE09B1FE /* FirebaseCore */,
+				B13FB61BE7415D08BFB1E3C3 /* FirebaseAuth */,
+				C0D3D60D300CFAB1009287D7 /* FirebaseFirestore */,
+				B12261CCAE285434D1199B87 /* GoogleSignIn */,
+				6F5D6CF7FAA5542F822C2A64 /* GoogleSignInSwift */,
+			);
+			buildConfigurationList = C0EC63233034D5C40030B762 /* Build configuration list for PBXNativeTarget "NovaShareExtension" */;
+			buildPhases = (
+				C0EC63113034D5C40030B762 /* Sources */,
+				C0EC63123034D5C40030B762 /* Frameworks */,
+				C0EC63133034D5C40030B762 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0EC63163034D5C40030B762 /* NovaShareExtension */,
+			);
+			name = NovaShareExtension;
+			packageProductDependencies = (
+			);
+			productName = NovaShareExtension;
+			productReference = C0EC63153034D5C40030B762 /* NovaShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -251,6 +364,9 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					C0D3D5F2300CF69E009287D7 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					C0EC63143034D5C40030B762 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -273,6 +389,7 @@
 			targets = (
 				001D72F45BCA585CA4A811B2 /* Nova */,
 				C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */,
+				C0EC63143034D5C40030B762 /* NovaShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -295,6 +412,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0EC63133034D5C40030B762 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0EC63353034D5C40030B762 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -305,25 +430,46 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0EC63113034D5C40030B762 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0EC63393034D5C40030B762 /* AppGroupStorage.swift in Sources */,
+				C0EC63363034D5C40030B762 /* GoogleDriveService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FA87E81089124B17AD253BE1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6B57BDD24561AA42977AC76A /* AuthenticationViewModel.swift in Sources */,
-				713D77D04A7362B96883A3A6 /* BankOperationsView.swift in Sources */,
-				298CD09B8C28CBD77A77A1EE /* ContentView.swift in Sources */,
-				1030163FC1BE1B395C6ED68C /* DictionaryView.swift in Sources */,
-				9A0DAE14D32268F6E48A22E0 /* FinanceOperationsView.swift in Sources */,
-				BD755815B3EE2EB7E0EED21C /* HomeView.swift in Sources */,
-				52019022716C6BEF2018B2E1 /* LoginView.swift in Sources */,
-				0A0E559FB5550FA06A4DB4D2 /* MainContainerView.swift in Sources */,
-				CA60C501AD1A716BE86C3EC6 /* MainTabView.swift in Sources */,
-				22A819C203774FF7FD7A5488 /* NotesView.swift in Sources */,
-				5CE76EEEAE2B5DB873E1952D /* NovaApp.swift in Sources */,
-				F1CA8B158E0B4EC1C0C05862 /* RecentlyDeletedView.swift in Sources */,
-				D1F1ADBF5DC874E966E49C7B /* SettingsView.swift in Sources */,
-				E41BAF3DCBA5BE28C7509336 /* SideMenuView.swift in Sources */,
-				EA8E51CDCDAAA2714B377AEA /* TagsView.swift in Sources */,
+				B04B1429817D9C9A3ED58648 /* Nova/AuthenticationViewModel.swift in Sources */,
+				996D84599D2960B4F62A1744 /* Nova/Models/BankModels.swift in Sources */,
+				27C26C01755BC0080D40C4C8 /* Nova/Features/Bank/BankOperationsView.swift in Sources */,
+				B89D14730226B74C6CC0D03E /* Nova/ContentView.swift in Sources */,
+				FE759C8297C1B30E01409071 /* Nova/Features/Dictionary/DailyStatsSheetView.swift in Sources */,
+				92DBE566552F2E6CF6ECE755 /* Nova/Models/DictionaryModels.swift in Sources */,
+				0BC16539956A5C0B120FA125 /* Nova/Features/Dictionary/DictionaryView.swift in Sources */,
+				77CFEABF18C190BA4BA3899A /* Nova/Features/Dictionary/FilterSheetView.swift in Sources */,
+				A733516ACE8CA4E415BD1C7D /* Nova/Models/FinanceModels.swift in Sources */,
+				4AE9A029592754DEFBA0BBE4 /* Nova/Features/Finance/FinanceOperationsView.swift in Sources */,
+				535A390EBCD72FDAE6FC3840 /* Nova/Features/Bank/GoogleDrivePickerView.swift in Sources */,
+				84D207E0E108F1F57A9168D1 /* Nova/Core/Services/GoogleDriveService.swift in Sources */,
+				BBEA6778E61D880DA3BD3D2D /* Nova/Core/HapticManager.swift in Sources */,
+				D939CAF4CADFE54B5CEFE873 /* Nova/Features/Home/HomeView.swift in Sources */,
+				FCB6EE8E7042DEBF6D03D77F /* Nova/LoginView.swift in Sources */,
+				FFC2A838A320371B9F50E1E9 /* Nova/MainContainerView.swift in Sources */,
+				3B6166B0BEF296AA56DF6EC2 /* Nova/MainTabView.swift in Sources */,
+				B279AAEBF7A9485197E1E51D /* Nova/Features/Notes/NoteCardRow.swift in Sources */,
+				B4E41826666BF28396FA5390 /* Nova/Models/NoteModels.swift in Sources */,
+				423317D83EC569D717FC7250 /* Nova/Features/Notes/NotesView.swift in Sources */,
+				61118187E48894D7A48F9DDF /* Nova/NovaApp.swift in Sources */,
+				C0EC63383034D5C40030B762 /* AppGroupStorage.swift in Sources */,
+				0E9D0443B66025C7709859F3 /* Nova/RecentlyDeletedView.swift in Sources */,
+				1E0C21546A77A1BB3E827974 /* Nova/SettingsView.swift in Sources */,
+				93A3A77785CEFB1A324E6F12 /* Nova/SideMenuView.swift in Sources */,
+				6892357043646CD79A01B522 /* Nova/TagsView.swift in Sources */,
+				5E7F427EFECCE91467F45FDB /* Nova/Core/ThemeManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -334,6 +480,11 @@
 			isa = PBXTargetDependency;
 			target = C0D3D5F2300CF69E009287D7 /* NovaWidgetExtension */;
 			targetProxy = C0D3D603300CF6A0009287D7 /* PBXContainerItemProxy */;
+		};
+		C0EC631E3034D5C40030B762 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0EC63143034D5C40030B762 /* NovaShareExtension */;
+			targetProxy = C0EC631D3034D5C40030B762 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -536,6 +687,84 @@
 			};
 			name = Release;
 		};
+		C0EC63203034D5C40030B762 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NovaShareExtension/NovaShareExtension.entitlements;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovaShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NovaShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova.NovaShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0EC63213034D5C40030B762 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NovaShareExtension/NovaShareExtension.entitlements;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = A64NZ37MJD;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovaShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NovaShareExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sakyol.Nova.NovaShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		D61E871FD3E8D88082AB9F41 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -608,6 +837,15 @@
 			buildConfigurations = (
 				C0D3D608300CF6A0009287D7 /* Debug */,
 				C0D3D609300CF6A0009287D7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C0EC63233034D5C40030B762 /* Build configuration list for PBXNativeTarget "NovaShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0EC63203034D5C40030B762 /* Debug */,
+				C0EC63213034D5C40030B762 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

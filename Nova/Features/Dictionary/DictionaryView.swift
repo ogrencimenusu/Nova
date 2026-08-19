@@ -42,29 +42,7 @@ class TextToSpeechManager: NSObject, AVSpeechSynthesizerDelegate {
     }
 }
 
-// MARK: - Helper Models
-
-struct SortRule: Identifiable, Hashable, Codable {
-    var id: String = UUID().uuidString
-    var field: String // "createdAt", "term", "learningStage"
-    var direction: String // "asc", "desc"
-}
-
-struct CustomListModel: Identifiable, Codable {
-    let id: String
-    let name: String
-    let wordIds: [String]
-    let userId: String
-}
-
-struct StickyNoteModel: Identifiable {
-    let id: String
-    let title: String
-    let text: String
-    let wordTerm: String
-    let wordId: String
-    let createdAt: Date
-}
+// MARK: - Helper Models (Moved to DictionaryModels.swift)
 
 func parseFirestoreDate(_ val: Any?) -> Date {
     guard let val = val else { return Date.distantPast }
@@ -148,6 +126,11 @@ struct DictionaryView: View {
     @State private var showStickySettingsSheet: Bool = false
     @State private var practiceViewMode: String = "options"
     
+    // Repetition & Slider States
+    @AppStorage("unsolved_words_threshold_days") private var unsolvedWordsThresholdDays: Int = 15
+    @AppStorage("unsolved_words_max_count") private var unsolvedWordsMaxCount: Double = 15
+    @State private var bannerSliderIndex: Int = 0
+    
     // Home Dashboard Customization States
     @AppStorage("home_sections_order_v1") private var homeSectionsOrderJSON: String = "[\"banner\",\"tools\",\"words\"]"
     @AppStorage("home_sections_hidden_v1") private var homeSectionsHiddenJSON: String = "[]"
@@ -208,51 +191,17 @@ struct DictionaryView: View {
         }
     }
     
+    private var currentMaxCountForThreshold: Int {
+        let key = "unsolved_words_max_count_\(unsolvedWordsThresholdDays)"
+        let val = UserDefaults.standard.double(forKey: key)
+        if val > 0 { return Int(val) }
+        return Int(unsolvedWordsMaxCount > 0 ? unsolvedWordsMaxCount : 15)
+    }
+
     var body: some View {
         NavigationView {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Programmatic Native NavigationLinks
-                    NavigationLink(
-                        destination: CustomListsSubView(
-                            customLists: customLists,
-                            onSelectList: { listId in
-                                filterListId = listId
-                                selectedTab = nil
-                            }
-                        ),
-                        tag: "lists",
-                        selection: $selectedTab
-                    ) { EmptyView() }
-                    
-                    NavigationLink(
-                        destination: PratikSubView(
-                            allWords: $allWords,
-                            customLists: customLists,
-                            stickyNotes: stickyNotes,
-                            viewMode: $practiceViewMode,
-                            onSelectWord: { word in
-                                selectedWordForDetail = word
-                            }
-                        ),
-                        tag: "pratik",
-                        selection: $selectedTab
-                    ) { EmptyView() }
-                    
-                    NavigationLink(
-                        destination: StickySubView(
-                            stickyNotes: stickyNotes,
-                            allWords: allWords,
-                            searchText: $stickySearchText,
-                            showSettingsSheet: $showStickySettingsSheet,
-                            onSelectWord: { word in
-                                selectedWordForDetail = word
-                            }
-                        ),
-                        tag: "sticky",
-                        selection: $selectedTab
-                    ) { EmptyView() }
-
                     // Top Header Bar
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 3) {
@@ -319,7 +268,7 @@ struct DictionaryView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 14)
+                    .padding(.top, 6)
                     
                     // Featured Word & Progress Hero Card
                     bannerSectionView
@@ -332,6 +281,50 @@ struct DictionaryView: View {
                 }
                 .padding(.bottom, 36)
             }
+            .background(
+                Group {
+                    NavigationLink(
+                        destination: CustomListsSubView(
+                            customLists: customLists,
+                            onSelectList: { listId in
+                                filterListId = listId
+                                selectedTab = nil
+                            }
+                        ),
+                        tag: "lists",
+                        selection: $selectedTab
+                    ) { EmptyView() }
+                    
+                    NavigationLink(
+                        destination: PratikSubView(
+                            allWords: $allWords,
+                            customLists: effectiveCustomLists,
+                            stickyNotes: stickyNotes,
+                            viewMode: $practiceViewMode,
+                            onSelectWord: { word in
+                                selectedWordForDetail = word
+                            }
+                        ),
+                        tag: "pratik",
+                        selection: $selectedTab
+                    ) { EmptyView() }
+                    
+                    NavigationLink(
+                        destination: StickySubView(
+                            stickyNotes: stickyNotes,
+                            allWords: allWords,
+                            searchText: $stickySearchText,
+                            showSettingsSheet: $showStickySettingsSheet,
+                            onSelectWord: { word in
+                                selectedWordForDetail = word
+                            }
+                        ),
+                        tag: "sticky",
+                        selection: $selectedTab
+                    ) { EmptyView() }
+                }
+                .hidden()
+            )
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarHidden(true)
             .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
@@ -754,115 +747,314 @@ struct DictionaryView: View {
         return cleaned
     }
     
+    private var unsolvedWords: [UnsolvedWordItem] {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        
+        var latestSolvedMap: [String: Date] = [:]
+        for (dateStr, val) in dailyStatsMap {
+            guard let date = df.date(from: dateStr),
+                  let dict = val as? [String: Any],
+                  let wordsMap = dict["words"] as? [String: Any] else { continue }
+            
+            for (wId, wData) in wordsMap {
+                if let wDict = wData as? [String: Any] {
+                    let correct = (wDict["correct"] as? NSNumber)?.intValue ?? (wDict["correct"] as? Int ?? 0)
+                    let incorrect = (wDict["incorrect"] as? NSNumber)?.intValue ?? (wDict["incorrect"] as? Int ?? 0)
+                    if correct > 0 || incorrect > 0 {
+                        if let existing = latestSolvedMap[wId] {
+                            if date > existing {
+                                latestSolvedMap[wId] = date
+                            }
+                        } else {
+                            latestSolvedMap[wId] = date
+                        }
+                    }
+                }
+            }
+        }
+        
+        let now = Date()
+        let calendar = Calendar.current
+        var items: [UnsolvedWordItem] = []
+        
+        for word in allWords {
+            if let lastDate = latestSolvedMap[word.id] {
+                let days = calendar.dateComponents([.day], from: lastDate, to: now).day ?? 0
+                if days >= unsolvedWordsThresholdDays {
+                    items.append(UnsolvedWordItem(word: word, lastSolvedDate: lastDate, daysSinceLastSolved: days))
+                }
+            } else {
+                items.append(UnsolvedWordItem(word: word, lastSolvedDate: nil, daysSinceLastSolved: nil))
+            }
+        }
+        
+        items.sort { a, b in
+            if a.daysSinceLastSolved == nil && b.daysSinceLastSolved == nil {
+                return a.word.createdAt < b.word.createdAt
+            }
+            if a.daysSinceLastSolved == nil { return true }
+            if b.daysSinceLastSolved == nil { return false }
+            return a.daysSinceLastSolved! > b.daysSinceLastSolved!
+        }
+        
+        return Array(items.prefix(currentMaxCountForThreshold))
+    }
+    
+    private var effectiveCustomLists: [CustomListModel] {
+        var lists = customLists
+        let unsolvedIds = unsolvedWords.map { $0.word.id }
+        if !unsolvedIds.isEmpty {
+            lists.insert(
+                CustomListModel(
+                    id: "smart_unsolved",
+                    name: "🕒 Unutulanlar (\(unsolvedWordsThresholdDays)+ Gün)",
+                    wordIds: unsolvedIds,
+                    userId: Auth.auth().currentUser?.uid ?? ""
+                ),
+                at: 0
+            )
+        }
+        return lists
+    }
+    
+    private func launchUnsolvedPracticeTest() {
+        let unsolvedIds = unsolvedWords.map { $0.word.id }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            selectedTab = "pratik"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            NotificationCenter.default.post(
+                name: Notification.Name("StartUnsolvedTest"),
+                object: unsolvedIds
+            )
+        }
+    }
+    
     @ViewBuilder
     private var bannerSectionView: some View {
-        VStack(spacing: 14) {
-            // Featured Highlight Word Banner (if words exist)
-            if let word = recentWords.first ?? allWords.first {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 10, weight: .bold))
-                            Text("GÜNÜN ÖNE ÇIKAN KELİMESİ")
-                                .font(.system(size: 9, weight: .heavy))
-                                .tracking(0.5)
-                        }
-                        .foregroundColor(.white.opacity(0.9))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.18))
-                        .cornerRadius(8)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            TextToSpeechManager.shared.speak(word.term)
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "speaker.wave.3.fill")
-                                    .font(.system(size: 12))
-                                Text("Dinle")
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.2))
-                            .cornerRadius(12)
-                        }
-                    }
+        VStack(spacing: 12) {
+            // Header Row (Section Title on left, Fixed "Test Yap" Button on right)
+            HStack(alignment: .center) {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.orange)
                     
-                    HStack(alignment: .lastTextBaseline, spacing: 10) {
-                        Text(word.term)
-                            .font(.system(size: 24, weight: .heavy, design: .rounded))
-                            .foregroundColor(.white)
-                        
-                        let trPron = extractTurkishPronunciation(word.pronunciation)
-                        if !trPron.isEmpty {
-                            Text("(\(trPron))")
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
-                                .foregroundColor(.white.opacity(0.8))
-                        }
-                        
-                        Spacer()
-                    }
+                    Text("TEKRAR EDİLECEK KELİMELER")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .foregroundColor(Color(red: 0.1, green: 0.12, blue: 0.2))
                     
-                    if !word.shortMeanings.isEmpty {
-                        Text(word.shortMeanings)
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.95))
-                            .lineLimit(2)
-                    }
-                    
-                    // Stage progress bar
-                    HStack(spacing: 8) {
-                        Text("Öğrenme Aşaması")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.white.opacity(0.8))
-                        
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.2))
-                                    .frame(height: 5)
-                                Capsule()
-                                    .fill(Color.white)
-                                    .frame(width: geo.size.width * CGFloat(Double(word.learningStage) / 10.0), height: 5)
-                            }
-                        }
-                        .frame(height: 5)
-                        
-                        Text("\(word.learningStage)/10")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                    if !unsolvedWords.isEmpty {
+                        Text("\(unsolvedWords.count)")
+                            .font(.system(size: 10, weight: .black, design: .rounded))
                             .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange)
+                            .cornerRadius(10)
                     }
-                    .padding(.top, 4)
                 }
-                .padding(18)
+                
+                Spacer()
+                
+                // Fixed "Test Yap" button
+                Button(action: {
+                    launchUnsolvedPracticeTest()
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 10, weight: .black))
+                        Text("Test Yap")
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.orange, Color(red: 0.9, green: 0.3, blue: 0.1)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .cornerRadius(14)
+                    .shadow(color: Color.orange.opacity(0.35), radius: 6, x: 0, y: 3)
+                }
+            }
+            .padding(.horizontal, 4)
+            
+            // Slider / Paging Carousel or Empty State Card
+            if unsolvedWords.isEmpty {
+                // Empty state card (No unpracticed words)
+                VStack(alignment: .center, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(.green)
+                        Text("Tüm Kelimeler Güncel!")
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .foregroundColor(.white)
+                    }
+                    
+                    Text("Son \(unsolvedWordsThresholdDays) gündür çözülmemiş hiçbir kelimeniz bulunmuyor. Düzenli çalıştığınız için harikasınız!")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
+                .frame(maxWidth: .infinity, minHeight: 160)
+                .padding(.vertical, 26)
                 .background(
                     ZStack {
                         LinearGradient(
                             colors: [
-                                Color(red: 0.12, green: 0.16, blue: 0.36),
-                                Color(red: 0.22, green: 0.32, blue: 0.65)
+                                Color(red: 0.08, green: 0.28, blue: 0.22),
+                                Color(red: 0.12, green: 0.42, blue: 0.35)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
-                        
                         Circle()
-                            .fill(Color.blue.opacity(0.3))
-                            .frame(width: 160, height: 160)
-                            .blur(radius: 30)
-                            .offset(x: 120, y: -30)
+                            .fill(Color.green.opacity(0.25))
+                            .frame(width: 140, height: 140)
+                            .blur(radius: 25)
+                            .offset(x: 100, y: -20)
                     }
                 )
                 .cornerRadius(22)
-                .shadow(color: Color(red: 0.12, green: 0.16, blue: 0.36).opacity(0.3), radius: 12, x: 0, y: 5)
-                .onTapGesture {
-                    selectedWordForDetail = word
+                .shadow(color: Color(red: 0.08, green: 0.28, blue: 0.22).opacity(0.3), radius: 12, x: 0, y: 5)
+            } else {
+                TabView(selection: $bannerSliderIndex) {
+                    ForEach(Array(unsolvedWords.enumerated()), id: \.element.id) { index, item in
+                        let word = item.word
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                // Status badge
+                                HStack(spacing: 4) {
+                                    if let days = item.daysSinceLastSolved {
+                                        Image(systemName: "clock.badge.exclamationmark.fill")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text("\(days) GÜNDÜR ÇÖZÜLMEDİ")
+                                            .font(.system(size: 9, weight: .heavy))
+                                            .tracking(0.5)
+                                    } else {
+                                        Image(systemName: "sparkles")
+                                            .font(.system(size: 10, weight: .bold))
+                                        Text("HİÇ ÇÖZÜLMEDİ")
+                                            .font(.system(size: 9, weight: .heavy))
+                                            .tracking(0.5)
+                                    }
+                                }
+                                .foregroundColor(item.daysSinceLastSolved == nil ? Color(red: 1.0, green: 0.85, blue: 0.4) : .white.opacity(0.95))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    item.daysSinceLastSolved == nil
+                                        ? Color.orange.opacity(0.25)
+                                        : Color.white.opacity(0.18)
+                                )
+                                .cornerRadius(8)
+                                
+                                Spacer()
+                                
+                                Button(action: {
+                                    TextToSpeechManager.shared.speak(word.term)
+                                }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "speaker.wave.3.fill")
+                                            .font(.system(size: 12))
+                                        Text("Dinle")
+                                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(12)
+                                }
+                            }
+                            
+                            HStack(alignment: .lastTextBaseline, spacing: 10) {
+                                Text(word.term)
+                                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                                    .foregroundColor(.white)
+                                
+                                let trPron = extractTurkishPronunciation(word.pronunciation)
+                                if !trPron.isEmpty {
+                                    Text("(\(trPron))")
+                                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                
+                                Spacer()
+                            }
+                            
+                            if !word.shortMeanings.isEmpty {
+                                Text(word.shortMeanings)
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.95))
+                                    .lineLimit(2)
+                            }
+                            
+                            Spacer(minLength: 4)
+                            
+                            // Stage progress bar
+                            HStack(spacing: 8) {
+                                Text("Öğrenme Aşaması")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.8))
+                                
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color.white.opacity(0.2))
+                                            .frame(height: 5)
+                                        Capsule()
+                                            .fill(Color.white)
+                                            .frame(width: geo.size.width * CGFloat(Double(word.learningStage) / 10.0), height: 5)
+                                    }
+                                }
+                                .frame(height: 5)
+                                
+                                Text("\(word.learningStage)/10")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 16)
+                        .padding(.bottom, 34)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(
+                            ZStack {
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.12, green: 0.16, blue: 0.36),
+                                        Color(red: 0.22, green: 0.32, blue: 0.65)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                                
+                                Circle()
+                                    .fill(Color.blue.opacity(0.3))
+                                    .frame(width: 160, height: 160)
+                                    .blur(radius: 30)
+                                    .offset(x: 120, y: -30)
+                            }
+                        )
+                        .cornerRadius(22)
+                        .shadow(color: Color(red: 0.12, green: 0.16, blue: 0.36).opacity(0.3), radius: 12, x: 0, y: 5)
+                        .tag(index)
+                        .onTapGesture {
+                            selectedWordForDetail = word
+                        }
+                    }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .frame(height: 215)
             }
             
             // 4 Stats Hub Grid (2x2)
@@ -1407,631 +1599,7 @@ struct DictionaryView: View {
     }
 }
 
-// MARK: - Daily Stats & Streak Sheet View Implementation
-
-struct DailyStatsSheetView: View {
-    @Environment(\.dismiss) var dismiss
-    let dailyStatsMap: [String: Any]
-    let allWords: [LocalWord]
-    
-    @State private var viewMode: String = "daily" // "daily" | "monthly"
-    @State private var selectedDate: Date = Date()
-    @State private var calendarMonth: Date = Date()
-    
-    private var dateFormatter: DateFormatter {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }
-    
-    private var selectedDateStr: String {
-        dateFormatter.string(from: selectedDate)
-    }
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // View Mode Toggle (Günlük Detay vs Aylık Takvim)
-                HStack(spacing: 0) {
-                    Button(action: { withAnimation { viewMode = "daily" } }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "list.clipboard.fill")
-                            Text("Günlük Detay")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(viewMode == "daily" ? Color.blue : Color.clear)
-                        .foregroundColor(viewMode == "daily" ? .white : .primary)
-                        .cornerRadius(20)
-                    }
-                    
-                    Button(action: { withAnimation { viewMode = "monthly" } }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "calendar")
-                            Text("Aylık Takvim")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(viewMode == "monthly" ? Color.blue : Color.clear)
-                        .foregroundColor(viewMode == "monthly" ? .white : .primary)
-                        .cornerRadius(20)
-                    }
-                }
-                .padding(4)
-                .background(Color.black.opacity(0.05))
-                .cornerRadius(24)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                
-                if viewMode == "daily" {
-                    dailyDetailView
-                } else {
-                    monthlyCalendarView
-                }
-            }
-            .navigationTitle("Seri ve İstatistikler")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Kapat") {
-                        dismiss()
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                }
-            }
-        }
-    }
-    
-    private var dailyDetailView: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                // Date Navigator Row
-                HStack {
-                    Button(action: {
-                        if let prev = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) {
-                            selectedDate = prev
-                        }
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(8)
-                            .background(Color.black.opacity(0.04))
-                            .cornerRadius(8)
-                    }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 6) {
-                        Image(systemName: "calendar")
-                            .foregroundColor(.blue)
-                        Text(selectedDate.formatted(date: .complete, time: .omitted))
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        if let next = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
-                            selectedDate = next
-                        }
-                    }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(8)
-                            .background(Color.black.opacity(0.04))
-                            .cornerRadius(8)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                
-                let statsData = dailyStatsMap[selectedDateStr] as? [String: Any] ?? [:]
-                let correctCount = (statsData["correctCount"] as? NSNumber)?.intValue ?? (statsData["correctCount"] as? Int ?? 0)
-                let wrongCount = statsData["wrongCount"] as? Int ?? 0
-                let totalCount = correctCount + wrongCount
-                let accuracy = totalCount > 0 ? Int(Double(correctCount) / Double(totalCount) * 100) : 0
-                
-                // 4 Metric Cards Grid
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    metricCard(title: "ÇÖZÜLEN SORU", value: "\(totalCount)", icon: "number", color: .blue)
-                    metricCard(title: "DOĞRU CEVAP", value: "\(correctCount)", icon: "checkmark.circle.fill", color: .green)
-                    metricCard(title: "YANLIŞ CEVAP", value: "\(wrongCount)", icon: "xmark.circle.fill", color: .red)
-                    metricCard(title: "BAŞARI ORANI", value: "%\(accuracy)", icon: "chart.line.uptrend.xyaxis", color: .purple)
-                }
-                .padding(.horizontal, 16)
-                
-                if totalCount == 0 {
-                    VStack(spacing: 8) {
-                        Image(systemName: "calendar.badge.exclamationmark")
-                            .font(.system(size: 36))
-                            .foregroundColor(.secondary.opacity(0.5))
-                        Text("Bu tarihte herhangi bir test çözülmemiş.")
-                            .font(.system(size: 13, design: .rounded))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 30)
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("ÇALIŞILAN KELİMELER")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .tracking(1)
-                        
-                        if let wordsMap = statsData["words"] as? [String: Any] {
-                            ForEach(Array(wordsMap.keys).sorted(), id: \.self) { wKey in
-                                let item = wordsMap[wKey] as? [String: Any] ?? [:]
-                                let c = item["correct"] as? Int ?? 0
-                                let w = item["incorrect"] as? Int ?? 0
-                                let wordTerm = item["term"] as? String ?? (allWords.first(where: { $0.id == wKey })?.term ?? wKey)
-                                
-                                HStack {
-                                    Text(wordTerm)
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                    Spacer()
-                                    HStack(spacing: 12) {
-                                        if c > 0 {
-                                            Text("\(c) Doğru")
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundColor(.green)
-                                        }
-                                        if w > 0 {
-                                            Text("\(w) Yanlış")
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundColor(.red)
-                                        }
-                                    }
-                                }
-                                .padding(12)
-                                .background(Color.white)
-                                .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.black.opacity(0.04), lineWidth: 1)
-                                )
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-            }
-            .padding(.bottom, 24)
-        }
-    }
-    
-    private var monthlyCalendarView: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                // Month Navigator Row
-                HStack {
-                    Button(action: {
-                        if let prev = Calendar.current.date(byAdding: .month, value: -1, to: calendarMonth) {
-                            calendarMonth = prev
-                        }
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(8)
-                            .background(Color.black.opacity(0.04))
-                            .cornerRadius(8)
-                    }
-                    
-                    Spacer()
-                    
-                    Text(calendarMonth.formatted(.dateTime.month(.wide).year()))
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        if let next = Calendar.current.date(byAdding: .month, value: 1, to: calendarMonth) {
-                            calendarMonth = next
-                        }
-                    }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(8)
-                            .background(Color.black.opacity(0.04))
-                            .cornerRadius(8)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                
-                // Days of week header
-                HStack {
-                    ForEach(["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"], id: \.self) { day in
-                        Text(day)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(.horizontal, 16)
-                
-                // Calendar Grid
-                let days = getDaysInMonth(calendarMonth)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                    ForEach(Array(days.enumerated()), id: \.offset) { index, dateOpt in
-                        if let date = dateOpt {
-                            let key = dateFormatter.string(from: date)
-                            let stats = dailyStatsMap[key] as? [String: Any] ?? [:]
-                            let correct = (stats["correctCount"] as? NSNumber)?.intValue ?? (stats["correctCount"] as? Int ?? 0)
-                            let isStreak = correct >= 100
-                            let dayNum = Calendar.current.component(.day, from: date)
-                            
-                            VStack(spacing: 2) {
-                                Text("\(dayNum)")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                    .foregroundColor(isStreak ? .white : .primary)
-                                
-                                if isStreak {
-                                    Image(systemName: "flame.fill")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.white)
-                                } else if correct > 0 {
-                                    Circle()
-                                        .fill(Color.orange)
-                                        .frame(width: 4, height: 4)
-                                }
-                            }
-                            .frame(height: 42)
-                            .frame(maxWidth: .infinity)
-                            .background(
-                                Group {
-                                    if isStreak {
-                                        LinearGradient(colors: [.red, .orange], startPoint: .top, endPoint: .bottom)
-                                    } else if correct > 0 {
-                                        Color.orange.opacity(0.12)
-                                    } else {
-                                        Color.black.opacity(0.02)
-                                    }
-                                }
-                            )
-                            .cornerRadius(10)
-                            .onTapGesture {
-                                selectedDate = date
-                                withAnimation { viewMode = "daily" }
-                            }
-                        } else {
-                            Color.clear
-                                .frame(height: 42)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            .padding(.bottom, 24)
-        }
-    }
-    
-    @ViewBuilder
-    private func metricCard(title: String, value: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(color)
-                Spacer()
-            }
-            Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-            Text(title)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundColor(.secondary)
-        }
-        .padding(12)
-        .background(Color.white)
-        .cornerRadius(14)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.black.opacity(0.03), lineWidth: 1)
-        )
-    }
-    
-    private func getDaysInMonth(_ monthDate: Date) -> [Date?] {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month], from: monthDate)
-        guard let firstDay = cal.date(from: comps),
-              let range = cal.range(of: .day, in: .month, for: firstDay) else { return [] }
-        
-        let weekday = cal.component(.weekday, from: firstDay) // 1 = Sun, 2 = Mon ...
-        let offset = (weekday == 1 ? 6 : weekday - 2) // Mon = 0
-        
-        var result: [Date?] = Array(repeating: nil, count: offset)
-        for day in 1...range.count {
-            if let date = cal.date(byAdding: .day, value: day - 1, to: firstDay) {
-                result.append(date)
-            }
-        }
-        return result
-    }
-}
-
-// MARK: - Filter Sheet View Implementation
-
-struct FilterSheetView: View {
-    @Environment(\.dismiss) var dismiss
-    
-    @Binding var filterLanguage: String
-    @Binding var filterStarredOnly: Bool
-    @Binding var filterSortRules: [SortRule]
-    @Binding var filterStatus: String
-    @Binding var filterListId: String? // Selected Custom List filter ID
-    
-    let customLists: [CustomListModel] // Loaded custom lists
-    let languages: [String]
-    let totalCount: Int
-    let languageCounts: [String: Int]
-    let starredCount: Int
-    let filteredCount: Int
-    
-    var body: some View {
-        NavigationView {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 20) {
-                    // Results Count Bar at the top of the sheet
-                    HStack {
-                        Text("Filtrelenmiş Kelime Sayısı:")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(filteredCount) Kelime")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.blue)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.blue.opacity(0.06))
-                    .cornerRadius(10)
-                    .padding(.top, 8)
-                    
-                    // Section 1: Languages and Stars
-                    Text("Diller & Yıldızlılar")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.secondary)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            // Tüm Diller Button
-                            filterChip(title: "Tüm Diller", count: totalCount, isSelected: filterLanguage == "all" && !filterStarredOnly) {
-                                filterLanguage = "all"
-                                filterStarredOnly = false
-                            }
-                            
-                            // Dynamic Languages
-                            ForEach(languages, id: \.self) { lang in
-                                let count = languageCounts[lang] ?? 0
-                                filterChip(title: lang.capitalized, count: count, isSelected: filterLanguage.lowercased() == lang.lowercased() && !filterStarredOnly) {
-                                    filterLanguage = lang
-                                    filterStarredOnly = false
-                                }
-                            }
-                            
-                            // Yıldızlılar Button
-                            filterChip(title: "Yıldızlılar", count: starredCount, isSelected: filterStarredOnly) {
-                                filterStarredOnly = true
-                            }
-                        }
-                        .padding(.horizontal, 2)
-                    }
-                    
-                    Divider()
-                    
-                    // Section 2: Multi-Level Sorting
-                    HStack {
-                        Text("Sıralama")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        
-                        if !filterSortRules.isEmpty {
-                            Button("Temizle") {
-                                filterSortRules.removeAll()
-                            }
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundColor(.red)
-                        }
-                    }
-                    
-                    VStack(spacing: 10) {
-                        ForEach(Array(filterSortRules.enumerated()), id: \.offset) { index, rule in
-                            HStack(spacing: 8) {
-                                Image(systemName: "line.3.horizontal")
-                                    .foregroundColor(.secondary)
-                                
-                                // Field Selector Menu
-                                Menu {
-                                    Button("Kelime (A-Z)") { updateRuleField(at: index, field: "term") }
-                                    Button("Eklenme Tarihi") { updateRuleField(at: index, field: "createdAt") }
-                                    Button("Öğrenim Aşaması") { updateRuleField(at: index, field: "learningStage") }
-                                } label: {
-                                    HStack {
-                                        Text(fieldLabel(rule.field))
-                                            .font(.system(size: 13, weight: .medium))
-                                        Image(systemName: "chevron.down")
-                                            .font(.system(size: 10))
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.04))
-                                    .cornerRadius(8)
-                                    .foregroundColor(.primary)
-                                }
-                                
-                                Spacer()
-                                
-                                // Direction Selector Menu
-                                Menu {
-                                    Button(rule.field == "term" ? "A-Z (Artan)" : "Artan") { updateRuleDir(at: index, dir: "asc") }
-                                    Button(rule.field == "term" ? "Z-A (Azalan)" : "Azalan") { updateRuleDir(at: index, dir: "desc") }
-                                } label: {
-                                    HStack {
-                                        Text(rule.direction == "asc" ? (rule.field == "term" ? "A-Z" : "Artan") : (rule.field == "term" ? "Z-A" : "Azalan"))
-                                            .font(.system(size: 13, weight: .medium))
-                                        Image(systemName: "chevron.down")
-                                            .font(.system(size: 10))
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                                    .background(Color.black.opacity(0.04))
-                                    .cornerRadius(8)
-                                    .foregroundColor(.primary)
-                                }
-                                
-                                // Remove Rule Button
-                                Button(action: {
-                                    filterSortRules.remove(at: index)
-                                }) {
-                                    Image(systemName: "trash")
-                                        .foregroundColor(.red)
-                                        .font(.system(size: 14))
-                                }
-                                .padding(.leading, 4)
-                            }
-                            .padding(8)
-                            .background(Color.white)
-                            .cornerRadius(10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                            )
-                        }
-                        
-                        // Dashed Button: + Yeni Kural Ekle
-                        Button(action: {
-                            filterSortRules.append(SortRule(field: "createdAt", direction: "desc"))
-                        }) {
-                            HStack {
-                                Image(systemName: "plus")
-                                Text("Yeni Kural Ekle")
-                            }
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundColor(.blue)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(style: StrokeStyle(lineWidth: 1.5, dash: [4]))
-                                    .foregroundColor(.blue.opacity(0.5))
-                                    .background(Color.blue.opacity(0.02))
-                            )
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // Section 3: Learning Status
-                    Text("Öğrenim Durumu")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.secondary)
-                    
-                    HStack(spacing: 8) {
-                        statusTab(title: "Tümü", tag: "all", activeColor: .blue)
-                        statusTab(title: "Yeni", tag: "yeni", activeColor: Color(hex: "3498db"))
-                        statusTab(title: "Öğreniyor", tag: "ogreniyor", activeColor: Color.amber)
-                        statusTab(title: "Öğrendi", tag: "ogrendi", activeColor: .green)
-                    }
-                    
-                    Divider()
-                    
-                    // Section 4: Özel Listelerim
-                    Text("Özel Listelerim")
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.secondary)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            // "Tüm Kelimeler" chip resets custom list filter
-                            filterChip(title: "Tüm Kelimeler", count: totalCount, isSelected: filterListId == nil) {
-                                filterListId = nil
-                            }
-                            
-                            // Custom Lists chips
-                            ForEach(customLists) { list in
-                                filterChip(title: list.name, count: list.wordIds.count, isSelected: filterListId == list.id) {
-                                    filterListId = list.id
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 2)
-                    }
-                }
-                .padding(16)
-            }
-            .navigationTitle("Filtrele & Sırala")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Tamam") {
-                        dismiss()
-                    }
-                    .font(.system(size: 15, weight: .bold))
-                }
-            }
-        }
-    }
-    
-    private func fieldLabel(_ key: String) -> String {
-        switch key {
-        case "term": return "Kelime"
-        case "createdAt": return "Eklenme Tarihi"
-        case "learningStage": return "Öğrenim Aşaması"
-        default: return "Sıralama"
-        }
-    }
-    
-    private func updateRuleField(at idx: Int, field: String) {
-        if idx < filterSortRules.count {
-            filterSortRules[idx].field = field
-        }
-    }
-    
-    private func updateRuleDir(at idx: Int, dir: String) {
-        if idx < filterSortRules.count {
-            filterSortRules[idx].direction = dir
-        }
-    }
-    
-    @ViewBuilder
-    private func filterChip(title: String, count: Int, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                Text("\(count)")
-                    .font(.system(size: 9, weight: .bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(isSelected ? Color.white.opacity(0.2) : Color.black.opacity(0.06))
-                    .cornerRadius(8)
-            }
-            .foregroundColor(isSelected ? .white : .primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(isSelected ? Color.blue : Color.black.opacity(0.04))
-            .cornerRadius(20)
-        }
-    }
-    
-    @ViewBuilder
-    private func statusTab(title: String, tag: String, activeColor: Color) -> some View {
-        Button(action: {
-            filterStatus = tag
-        }) {
-            Text(title)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundColor(filterStatus == tag ? .white : .primary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(filterStatus == tag ? activeColor : Color.black.opacity(0.04))
-                .cornerRadius(10)
-        }
-    }
-}
+// MARK: - Daily Stats & Filter Sheet Views (Moved to Features/Dictionary/DailyStatsSheetView.swift and FilterSheetView.swift)
 
 // MARK: - Word Detail Sheet Modal Implementation
 
@@ -2148,7 +1716,7 @@ struct WordDetailSheetView: View {
                     if let meanings = word.meanings {
                         let examples = meanings.flatMap { $0.examples }.filter { !$0.en.isEmpty }
                         if !examples.isEmpty {
-                            detailBlock(title: "ÖRNEK CÜMLELER", icon: "chat.left.quote.fill", iconColor: .blue) {
+                            detailBlock(title: "ÖRNEK CÜMLELER", icon: "quote.bubble.fill", iconColor: .blue) {
                                 VStack(alignment: .leading, spacing: 12) {
                                     ForEach(examples) { ex in
                                         HStack(alignment: .top, spacing: 8) {
@@ -2235,7 +1803,7 @@ struct WordDetailSheetView: View {
                     
                     // 6. Word Family (Safely parsed to avoid String Index Out Of Bounds crash)
                     if let wordFamily = word.wordFamily, !wordFamily.filter({ !$0.isEmpty }).isEmpty {
-                        detailBlock(title: "KELİME AİLESİ (WORD FAMILY)", icon: "diagram.3.fill", iconColor: .blue) {
+                        detailBlock(title: "KELİME AİLESİ (WORD FAMILY)", icon: "network", iconColor: .blue) {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
                                     ForEach(wordFamily.filter { !$0.isEmpty }, id: \.self) { rawItem in
@@ -2669,58 +2237,7 @@ struct FlowLayoutView<Content: View>: View {
     }
 }
 
-// MARK: - Word detail sub-models
-
-struct WordMeaning: Identifiable {
-    let id = UUID()
-    let definition: String
-    let examples: [WordExample]
-}
-
-struct WordExample: Identifiable {
-    let id = UUID()
-    let en: String
-    let tr: String
-}
-
-struct WordRelation: Identifiable {
-    let id = UUID()
-    let word: String
-    let meaning: String
-}
-
-// MARK: - Local Word Model Struct Definition
-
-struct LocalWord: Identifiable {
-    let id: String
-    let term: String
-    let shortMeanings: String
-    let pronunciation: String
-    let level: String
-    var isStarred: Bool
-    var learningStage: Int
-    let createdAt: Date
-    let language: String // E.g., "english"
-    
-    // Additional fields for detail view
-    var meanings: [WordMeaning]? = nil
-    var synonyms: [WordRelation]? = nil
-    var antonyms: [WordRelation]? = nil
-    var collocations: [String]? = nil
-    var wordFamily: [String]? = nil
-    var specialNote: String? = nil
-    var conjugation: String? = nil
-    
-    var meaningsList: [String] {
-        if shortMeanings.contains("\n") {
-            return shortMeanings.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
-        if shortMeanings.contains(",") {
-            return shortMeanings.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        }
-        return [shortMeanings]
-    }
-}
+// MARK: - Word detail sub-models (Moved to DictionaryModels.swift)
 
 // MARK: - WordCardView matching Web Project aesthetics
 
@@ -3191,30 +2708,7 @@ struct CustomListsContentView: View {
 
 // MARK: - PratikContentView Implementation (Web-matched Quiz & Practice Engine)
 
-struct PracticeQuestionItem: Identifiable {
-    let id: String
-    let wordId: String
-    let targetWord: LocalWord
-    let questionType: String // "mcq", "tf", "flashcard", "written"
-    let prompt: String
-    let correctAnswer: String
-    let options: [String]
-    let isTrueStatement: Bool?
-    let statement: String?
-    let exampleSentence: String?
-    let turkishTranslation: String?
-}
-
-struct QuestionAnswerResult {
-    let wordId: String
-    let wordTerm: String
-    let questionPrompt: String
-    let correctAnswer: String
-    let userAnswer: String
-    let isCorrect: Bool
-    var isTypo: Bool = false
-    var isWordFamily: Bool = false
-}
+// MARK: - PratikContentView Implementation (Moved models to DictionaryModels.swift)
 
 struct PratikContentView: View {
     @Binding var allWords: [LocalWord]
@@ -3468,16 +2962,33 @@ struct PratikContentView: View {
                 executeQuickTestById(testId)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("StartUnsolvedTest"))) { notification in
+            selectedListIds = ["smart_unsolved"]
+            selectedQuickTestId = nil
+            if let ids = notification.object as? [String], !ids.isEmpty {
+                questionCount = Double(min(15, ids.count))
+            } else {
+                questionCount = 15
+            }
+            questionFormat = "mixed"
+            selectedLanguage = "all"
+            typeMCQ = true
+            typeTF = true
+            typeFlashcard = true
+            typeWritten = false
+            statusYeni = true
+            statusOgreniyor = true
+            statusOgrendi = true
+            onlyStarred = false
+            excludeStarred = false
+            excludeSolvedToday = false
+            shufflePool = true
+            viewMode = "setup"
+        }
     }
     
     private func executeQuickTestById(_ testId: String) {
-        let defaults: [QuickTestTemplate] = [
-            QuickTestTemplate(id: "default_ogrendiklerim", name: "Öğrendiklerimi Test Et", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: false, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2),
-            QuickTestTemplate(id: "default_yildizli", name: "Yıldızlı Kelimeler", questionCount: 15, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: true, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2),
-            QuickTestTemplate(id: "default_tum", name: "Tüm Kelimeler", questionCount: 20, questionFormat: "mixed", selectedLanguage: "all", typeMCQ: true, typeTF: true, typeFlashcard: false, typeWritten: false, statusYeni: true, statusOgreniyor: true, statusOgrendi: true, onlyStarred: false, excludeStarred: false, excludeSolvedToday: false, shufflePool: true, modeFillInTheBlanks: false, smartDistractors: true, modeMissingLetters: false, modeSingleMeaning: false, modeComboStreak: false, modeProgressiveHint: false, maxAllowedTypoLetters: 2)
-        ]
-        
-        let found = quickTests.first(where: { $0.id == testId }) ?? defaults.first(where: { $0.id == testId })
+        let found = quickTests.first(where: { $0.id == testId })
         if let template = found {
             viewMode = "setup"
             startTestFromQuickTemplate(template)
@@ -3667,7 +3178,7 @@ struct PratikContentView: View {
                             showSaveQuickTestAlert = true
                         }) {
                             HStack(spacing: 6) {
-                                Image(systemName: "bookmark.badge.plus")
+                                Image(systemName: "bookmark.fill")
                                     .font(.system(size: 13, weight: .bold))
                                 Text("Hızlı Teste Kaydet")
                                     .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -3717,7 +3228,7 @@ struct PratikContentView: View {
                 // 2. Hızlı Test Şablonları Section
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 6) {
-                        Image(systemName: "lightning.fill")
+                        Image(systemName: "bolt.fill")
                             .font(.system(size: 15))
                             .foregroundColor(Color.amber)
                         
@@ -4899,7 +4410,7 @@ struct PratikContentView: View {
                                     
                                     VStack(spacing: 8) {
                                         if !familyQuestions.isEmpty {
-                                            accordionCategoryRow(key: "families", title: "Kelime Ailesi", count: familyQuestions.count, icon: "diagram.3.fill", color: .purple, questionList: familyQuestions)
+                                            accordionCategoryRow(key: "families", title: "Kelime Ailesi", count: familyQuestions.count, icon: "network", color: .purple, questionList: familyQuestions)
                                         }
                                         accordionCategoryRow(key: "errors", title: "Hatalı Kelimeler", count: typoQuestions.count, icon: "exclamationmark.triangle.fill", color: .orange, questionList: typoQuestions)
                                         accordionCategoryRow(key: "corrects", title: "Doğru Kelimeler", count: correctQuestions.count, icon: "checkmark.circle.fill", color: .green, questionList: correctQuestions)
@@ -5488,6 +4999,7 @@ struct PratikContentView: View {
     
     private func startTestFromQuickTemplate(_ template: QuickTestTemplate) {
         selectedQuickTestId = template.id
+        selectedListIds.remove("smart_unsolved")
         
         questionCount = Double(template.questionCount)
         questionFormat = template.questionFormat
@@ -6544,70 +6056,7 @@ struct PratikContentView: View {
     }
 }
 
-struct QuickTestTemplate: Identifiable {
-    let id: String
-    let name: String
-    let questionCount: Int
-    let questionFormat: String
-    let selectedLanguage: String
-    let typeMCQ: Bool
-    let typeTF: Bool
-    let typeFlashcard: Bool
-    let typeWritten: Bool
-    let statusYeni: Bool
-    let statusOgreniyor: Bool
-    let statusOgrendi: Bool
-    let onlyStarred: Bool
-    let excludeStarred: Bool
-    let excludeSolvedToday: Bool
-    let shufflePool: Bool
-    let modeFillInTheBlanks: Bool
-    let smartDistractors: Bool
-    let modeMissingLetters: Bool
-    let modeSingleMeaning: Bool
-    let modeComboStreak: Bool
-    let modeProgressiveHint: Bool
-    var maxAllowedTypoLetters: Int = 2
-    var createdAt: Date = Date()
-    
-    var testType: String {
-        var types: [String] = []
-        if typeWritten { types.append("Yazılı") }
-        if typeMCQ { types.append("Çoktan Seçmeli") }
-        if typeTF { types.append("Doğru/Yanlış") }
-        if typeFlashcard { types.append("Flashcard") }
-        return types.count > 1 ? "Karışık" : (types.first ?? "Yazılı")
-    }
-    
-    var lang: String { selectedLanguage }
-    var direction: String {
-        questionFormat == "definition" ? "Türkçe -> Yabancı Dil" : (questionFormat == "term" ? "Yabancı Dil -> Türkçe" : "Karışık")
-    }
-    
-    var status: String {
-        var arr: [String] = []
-        if statusYeni { arr.append("Yeni") }
-        if statusOgreniyor { arr.append("Öğreniyor") }
-        if statusOgrendi { arr.append("Öğrendi") }
-        return arr.isEmpty ? "Tümü" : arr.joined(separator: " + ")
-    }
-    
-    var starOption: String {
-        onlyStarred ? "Sadece Yıldızlı" : (excludeStarred ? "Sadece Yıldızsız" : "Tümü")
-    }
-    
-    var features: String {
-        var arr: [String] = []
-        if modeFillInTheBlanks { arr.append("Örnek Cümle") }
-        if smartDistractors { arr.append("Akıllı Şıklar") }
-        if modeMissingLetters { arr.append("Eksik Harfler") }
-        if modeSingleMeaning { arr.append("Tek Anlam") }
-        if modeComboStreak { arr.append("Combo") }
-        if modeProgressiveHint { arr.append("Kademeli İpucu") }
-        if typeWritten { arr.append("Tolerans: \(maxAllowedTypoLetters) Harf") }
-        return arr.isEmpty ? "Standart" : arr.joined(separator: ", ")
-    }
-}
+// MARK: - QuickTestTemplate (Moved to DictionaryModels.swift)
 
 struct QuickTestCardView: View {
     let test: QuickTestTemplate

@@ -25,25 +25,118 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         settings.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: 100 * 1024 * 1024))
         Firestore.firestore().settings = settings
         
-        // Share Firebase Auth with Widget
-        do {
-            if let accessGroup = getKeychainGroup() {
-                try Auth.auth().useUserAccessGroup(accessGroup)
-                print("Successfully set user access group to: \(accessGroup)")
-                
-                Auth.auth().addStateDidChangeListener { auth, user in
-                    if let user = user {
-                        self.startListening(uid: user.uid)
-                    } else {
-                        self.stopListening()
-                    }
+        // Save UID immediately if user is already signed in (most reliable path)
+        if let user = Auth.auth().currentUser {
+            AppGroupStorage.saveUID(user.uid)
+        }
+        
+        // Save Google Drive token to AppGroupStorage for Share Extension
+        if let googleUser = GIDSignIn.sharedInstance.currentUser {
+            AppGroupStorage.saveDriveToken(googleUser.accessToken.tokenString)
+        } else {
+            GIDSignIn.sharedInstance.restorePreviousSignIn { user, _ in
+                if let token = user?.accessToken.tokenString {
+                    AppGroupStorage.saveDriveToken(token)
                 }
             }
-        } catch let error as NSError {
-            print("Error changing user access group: %@", error)
+        }
+        
+        // Try to share Auth keychain with extension (optional but helpful for Auth)
+        if let accessGroup = getKeychainGroup() {
+            do {
+                try Auth.auth().useUserAccessGroup(accessGroup)
+                print("Successfully set user access group to: \(accessGroup)")
+            } catch {
+                print("useUserAccessGroup failed (non-critical): \(error)")
+            }
+        }
+        
+        // Always listen for auth state changes and save UID — regardless of keychain group
+        Auth.auth().addStateDidChangeListener { auth, user in
+            if let user = user {
+                AppGroupStorage.saveUID(user.uid)
+                self.startListening(uid: user.uid)
+                self.cacheShareExtensionData(uid: user.uid)
+            } else {
+                self.stopListening()
+            }
         }
         
         return true
+    }
+    
+    /// Fetch banks and transaction types from Firestore and save to AppGroup disk
+    /// so Share Extension can read them without Firebase Auth.
+    func cacheShareExtensionData(uid: String) {
+        let db = Firestore.firestore()
+        
+        // Cache banks
+        db.collection("users").document(uid).collection("banks").getDocuments { snapshot, error in
+            guard let docs = snapshot?.documents else { return }
+            var banks: [CachedBank] = []
+            for doc in docs {
+                let data = doc.data()
+                guard let name = data["name"] as? String, !name.isEmpty else { continue }
+                let deleted = data["deleted"] as? Bool ?? false
+                if deleted { continue }
+                let logo = data["logo"] as? String ?? ""
+                var order = 999
+                if let intVal = data["order"] as? Int { order = intVal }
+                else if let dblVal = data["order"] as? Double { order = Int(dblVal) }
+                else if let strVal = data["order"] as? String { order = Int(strVal) ?? 999 }
+                banks.append(CachedBank(id: doc.documentID, name: name, logo: logo, order: order))
+            }
+            banks.sort { $0.order < $1.order }
+            if !banks.isEmpty {
+                AppGroupStorage.saveBanks(banks)
+                print("[AppGroupStorage] \(banks.count) banka AppGroup cache'e kaydedildi (Sıralı)")
+            }
+        }
+        
+        // Cache transaction types
+        db.collection("users").document(uid).collection("transactionTypes").order(by: "order").getDocuments { snapshot, error in
+            guard let docs = snapshot?.documents else { return }
+            var types: [CachedTransactionType] = []
+            for doc in docs {
+                let data = doc.data()
+                guard let name = data["name"] as? String, !name.isEmpty else { continue }
+                let deleted = data["deleted"] as? Bool ?? false
+                if deleted { continue }
+                var order = 999
+                if let intVal = data["order"] as? Int { order = intVal }
+                else if let dblVal = data["order"] as? Double { order = Int(dblVal) }
+                else if let strVal = data["order"] as? String { order = Int(strVal) ?? 999 }
+                types.append(CachedTransactionType(id: doc.documentID, name: name, order: order))
+            }
+            types.sort { $0.order < $1.order }
+            if !types.isEmpty {
+                AppGroupStorage.saveTransactionTypes(types)
+                print("[AppGroupStorage] \(types.count) işlem türü AppGroup cache'e kaydedildi (Sıralı)")
+            }
+        }
+        
+        // Cache quick actions (Hızlı İşlemler)
+        db.collection("users").document(uid).collection("quickActions").order(by: "order").getDocuments { snapshot, error in
+            guard let docs = snapshot?.documents else { return }
+            var qas: [CachedQuickAction] = []
+            for doc in docs {
+                let data = doc.data()
+                guard let name = data["name"] as? String, !name.isEmpty else { continue }
+                let deleted = data["deleted"] as? Bool ?? false
+                if deleted { continue }
+                let color = data["color"] as? String ?? "Gray"
+                var order = 999
+                if let intVal = data["order"] as? Int { order = intVal }
+                else if let dblVal = data["order"] as? Double { order = Int(dblVal) }
+                else if let strVal = data["order"] as? String { order = Int(strVal) ?? 999 }
+                qas.append(CachedQuickAction(id: doc.documentID, name: name, color: color, order: order))
+            }
+            qas.sort { $0.order < $1.order }
+            if !qas.isEmpty {
+                AppGroupStorage.saveQuickActions(qas)
+                print("[AppGroupStorage] \(qas.count) hızlı işlem AppGroup cache'e kaydedildi (Sıralı)")
+            }
+        }
     }
     
     func stopListening() {

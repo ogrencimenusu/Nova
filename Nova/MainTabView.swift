@@ -7,7 +7,7 @@ struct MainTabView: View {
         TabView {
             HomeView()
                 .tabItem {
-                    Label("Anasayfa", systemImage: "square.grid.2x2")
+                    Label("Anasayfa", systemImage: "house")
                 }
             
             BankOperationsView()

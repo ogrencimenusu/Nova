@@ -175,7 +175,8 @@ struct SplashScreenView: View {
                 .opacity(logoOpacity)
         }
         .onAppear {
-            if Auth.auth().currentUser != nil {
+            if let user = Auth.auth().currentUser {
+                AppGroupStorage.saveUID(user.uid)
                 preloader.startPrefetching()
             }
             checkLoadingState()

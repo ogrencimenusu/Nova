@@ -776,18 +776,13 @@ struct HomeView: View {
                 
                 // Calculate FIFO lots
                 var instLots: [String: [FinanceLot]] = [:] // Key: stockId_institutionId
-                var stockLots: [String: [FinanceLot]] = [:] // Key: stockId
                 
                 for r in records {
                     let keyInst = "\(r.stockId)_\(r.institutionId)"
-                    let keyStock = r.stockId
                     
                     if r.type.hasPrefix("AL") {
                         if instLots[keyInst] == nil { instLots[keyInst] = [] }
                         instLots[keyInst]?.append(FinanceLot(remaining: r.quantity, price: r.price, taxRate: r.taxRate, date: r.date))
-                        
-                        if stockLots[keyStock] == nil { stockLots[keyStock] = [] }
-                        stockLots[keyStock]?.append(FinanceLot(remaining: r.quantity, price: r.price, taxRate: r.taxRate, date: r.date))
                     } else {
                         // Sell for Institution lots
                         var remainingToSellInst = r.quantity
@@ -800,19 +795,6 @@ struct HomeView: View {
                                 remainingToSellInst -= sellAmount
                             }
                             instLots[keyInst] = lots
-                        }
-                        
-                        // Sell for Stock lots
-                        var remainingToSellStock = r.quantity
-                        if var lots = stockLots[keyStock] {
-                            for idx in 0..<lots.count {
-                                if remainingToSellStock <= 0 { break }
-                                if lots[idx].remaining <= 0 { continue }
-                                let sellAmount = min(lots[idx].remaining, remainingToSellStock)
-                                lots[idx].remaining -= sellAmount
-                                remainingToSellStock -= sellAmount
-                            }
-                            stockLots[keyStock] = lots
                         }
                     }
                 }
@@ -876,8 +858,8 @@ struct HomeView: View {
                 sortedInsts.sort { ($0.order ?? 999) < ($1.order ?? 999) }
                 
                 self.institutions = Array(sortedInsts.prefix(7))
-                self.totalFinancePortfolio = visibleInsts.reduce(0.0) { $0 + $1.netValue }
-                self.totalFinanceTax = visibleInsts.reduce(0.0) { $0 + $1.taxValue }
+                self.totalFinancePortfolio = instList.reduce(0.0) { $0 + $1.netValue }
+                self.totalFinanceTax = instList.reduce(0.0) { $0 + $1.taxValue }
                 
                 // Aggregates for Stocks
                 var stockStats: [String: (totalInvestment: Double, unrealizedNet: Double, unrealizedGross: Double, dailyGain: Double, quantity: Double)] = [:]
@@ -885,7 +867,10 @@ struct HomeView: View {
                     stockStats[stockId] = (0.0, 0.0, 0.0, 0.0, 0.0)
                 }
                 
-                for (stockId, lots) in stockLots {
+                for (key, lots) in instLots {
+                    let parts = key.split(separator: "_")
+                    guard parts.count == 2 else { continue }
+                    let stockId = String(parts[0])
                     guard let stockInfo = stocksDict[stockId] else { continue }
                     
                     for lot in lots {
@@ -1321,7 +1306,7 @@ struct HomeView: View {
                             )
                             .frame(width: 30, height: 30)
 
-                        Image(systemName: "calculator")
+                        Image(systemName: "plus.slash.minus")
                             .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.white)
                     }
@@ -2345,7 +2330,7 @@ struct StreakWidgetView: View {
             // Hızlı Testler Row
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 4) {
-                    Image(systemName: "lightning.fill")
+                    Image(systemName: "bolt.fill")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.orange)
                     Text("HIZLI TEST BAŞLAT")
@@ -2371,7 +2356,7 @@ struct StreakWidgetView: View {
                                 let isStarred = test.onlyStarred || test.id.contains("yildiz")
                                 let isLearning = test.id.contains("ogrendik")
                                 let accentColor: Color = isStarred ? .orange : (isLearning ? .green : .blue)
-                                let iconName: String = isStarred ? "star.fill" : (isLearning ? "checkmark.seal.fill" : "lightning.fill")
+                                let iconName: String = isStarred ? "star.fill" : (isLearning ? "checkmark.seal.fill" : "bolt.fill")
                                 
                                 let formatTypes = [
                                     test.typeMCQ ? "Çoktan Seçmeli" : "",

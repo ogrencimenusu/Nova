@@ -16,107 +16,7 @@ private let trDateFormatter: DateFormatter = {
     return f
 }()
 
-// MARK: - Finance Models
-
-struct FinanceInstitutionItem: Identifiable, Codable, Equatable {
-    var id: String
-    var name: String
-    var logo: String
-    var visible: Bool
-    var order: Int
-    var deleted: Bool
-}
-
-struct FinanceStockItem: Identifiable, Codable, Equatable {
-    var id: String
-    var name: String
-    var currentPrice: Double
-    var previousPrice: Double
-    var dailyChange: Double
-    var updatedAt: Date?
-    var createdAt: Date?
-}
-
-struct FinanceTransactionItem: Identifiable, Codable, Equatable {
-    var id: String
-    var institutionId: String
-    var stockId: String
-    var type: String
-    var quantity: Double
-    var price: Double
-    var taxRate: Double
-    var date: String
-    var remainingQuantity: Double
-    var deleted: Bool
-    var createdAt: Date?
-}
-
-struct ProcessedFinanceLot: Identifiable {
-    var id: String
-    var institutionId: String
-    var stockId: String
-    var type: String
-    var quantity: Double
-    var price: Double
-    var taxRate: Double
-    var date: String
-    var runningBalance: Double
-    var calculatedRemaining: Double
-    var calculatedTaxDeduction: Double
-    var totalBuyAmount: Double
-    var totalSaleAmount: Double
-    var grossProfit: Double
-    var totalProfit: Double
-    var costBasis: Double
-    var profitPercentage: Double
-    var holdingDurationDays: Int
-    var avgBuyPrice: Double
-    var createdAt: Date?
-}
-
-struct PortfolioItem: Identifiable {
-    var id: String
-    var name: String
-    var currentPrice: Double
-    var previousPrice: Double
-    var dailyChange: Double
-    var quantity: Double
-    var totalCost: Double
-    var avgPrice: Double
-    var totalGrossProfit: Double
-    var totalTaxDeduction: Double
-    var totalProfit: Double
-    var profitPercentage: Double
-    var holdingDurationDays: Int
-    var dailyGain: Double
-    var institutionBreakdown: [String: Double]
-    var updatedAt: Date?
-}
-
-struct InstitutionStats {
-    var unrealizedGross: Double = 0
-    var unrealizedNet: Double = 0
-    var totalInvestment: Double = 0
-    var currentValue: Double = 0
-    var dailyGain: Double = 0
-    var realizedGross: Double = 0
-    var realizedNet: Double = 0
-}
-
-struct AnalysisItem: Identifiable {
-    var id: String
-    var name: String
-    var logo: String
-    var value: Double
-    var cost: Double
-    var profit: Double
-    var tax: Double
-    var quantity: Double
-    var dailyGain: Double
-    var percentage: Double
-    var isActive: Bool
-    var color: Color
-}
+// MARK: - Finance Models (Moved to FinanceModels.swift)
 
 // MARK: - Helpers
 
@@ -2084,9 +1984,25 @@ struct StocksSpecialView: View {
         let active = processedLots.filter { $0.type.hasPrefix("AL") && $0.calculatedRemaining > 0 }
         let groups = Dictionary(grouping: active, by: { $0.institutionId })
         return groups.map { key, value in
-            let name = institutions.first(where: { $0.id == key })?.name ?? "Bilinmeyen Kurum"
-            return (institutionId: key, name: name, lots: value.sorted(by: { $0.date < $1.date }))
-        }.sorted(by: { $0.name < $1.name })
+            let inst = institutions.first(where: { $0.id == key })
+            let name = inst?.name ?? "Bilinmeyen Kurum"
+            let order = inst?.order ?? 999
+            let sortedLots = value.sorted { lot1, lot2 in
+                let stock1 = stocks.first(where: { $0.id == lot1.stockId })?.name ?? lot1.stockId
+                let stock2 = stocks.first(where: { $0.id == lot2.stockId })?.name ?? lot2.stockId
+                let comp = stock1.localizedCaseInsensitiveCompare(stock2)
+                if comp == .orderedSame {
+                    return lot1.date < lot2.date
+                }
+                return comp == .orderedAscending
+            }
+            return (institutionId: key, name: name, order: order, lots: sortedLots)
+        }.sorted { g1, g2 in
+            if g1.order != g2.order {
+                return g1.order < g2.order
+            }
+            return g1.name.localizedCaseInsensitiveCompare(g2.name) == .orderedAscending
+        }.map { (institutionId: $0.institutionId, name: $0.name, lots: $0.lots) }
     }
 
     private var allActiveLots: [ProcessedFinanceLot] {

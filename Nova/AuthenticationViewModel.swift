@@ -13,10 +13,16 @@ class AuthenticationViewModel: ObservableObject {
     init() {
         self.currentUser = Auth.auth().currentUser
         self.isAuthenticated = self.currentUser != nil
+        if let uid = self.currentUser?.uid {
+            UserDefaults(suiteName: "group.sakyol.nova")?.set(uid, forKey: "current_user_uid")
+        }
         
         Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.currentUser = user
             self?.isAuthenticated = user != nil
+            if let uid = user?.uid {
+                UserDefaults(suiteName: "group.sakyol.nova")?.set(uid, forKey: "current_user_uid")
+            }
         }
     }
     
@@ -30,7 +36,12 @@ class AuthenticationViewModel: ObservableObject {
             return
         }
         
-        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
+        let driveScopes = [
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/drive.readonly"
+        ]
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController, hint: nil, additionalScopes: driveScopes) { [weak self] result, error in
             if let error = error {
                 print("Error signing in with Google: \(error.localizedDescription)")
                 return
@@ -40,6 +51,8 @@ class AuthenticationViewModel: ObservableObject {
                   let idToken = user.idToken?.tokenString else {
                 return
             }
+            
+            AppGroupStorage.saveDriveToken(user.accessToken.tokenString)
             
             let credential = GoogleAuthProvider.credential(withIDToken: idToken,
                                                            accessToken: user.accessToken.tokenString)

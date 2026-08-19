@@ -4,53 +4,7 @@ import FirebaseAuth
 import SafariServices
 import UniformTypeIdentifiers
 
-// MARK: - Models
-
-struct BankItem: Identifiable, Codable, Equatable {
-    var id: String
-    var name: String
-    var logo: String
-    var visible: Bool
-    var order: Int
-    var deleted: Bool
-    var balance: Double = 0.0
-}
-
-struct BankTransactionItem: Identifiable, Codable, Equatable {
-    var id: String
-    var bankId: String
-    var title: String
-    var quickActions: [String]
-    var type: String
-    var amount: Double
-    var date: String
-    var createdAt: Date?
-    var deleted: Bool
-    var receiptUrl: String?
-}
-
-struct TagItem: Identifiable, Codable, Equatable {
-    var id: String
-    var name: String
-    var color: String
-    var order: Int
-}
-
-struct TransactionGroup: Identifiable {
-    var id: String
-    var label: String
-    var color: String
-    var items: [BankTransactionItem]
-    var total: Double {
-        items.reduce(0.0) { $0 + $1.amount }
-    }
-}
-
-// Wrapper for presenting SFSafariViewController sheet
-struct IdentifiableURL: Identifiable {
-    let id = UUID()
-    let url: URL
-}
+// MARK: - Models (Moved to BankModels.swift)
 
 struct SafariView: UIViewControllerRepresentable {
     let url: URL
@@ -122,10 +76,18 @@ class BankOperationsViewModel: ObservableObject {
         let groupSettingsListener = userDoc.collection("groupSettings").document("bankGroups").addSnapshotListener { snap, err in
             if let data = snap?.data() {
                 var settings: [String: [String: Any]] = [:]
+                var cachedTypes: [CachedTransactionType] = []
                 for (key, val) in data {
                     if let dict = val as? [String: Any] {
                         settings[key] = dict
+                        if let name = dict["name"] as? String {
+                            cachedTypes.append(CachedTransactionType(id: key, name: name))
+                        }
                     }
+                }
+                // Cache transaction types to AppGroup disk so Share Extension can read without Firebase Auth
+                if !cachedTypes.isEmpty {
+                    AppGroupStorage.saveTransactionTypes(cachedTypes)
                 }
                 DispatchQueue.main.async {
                     self.groupSettings = settings
@@ -170,6 +132,9 @@ class BankOperationsViewModel: ObservableObject {
                 self.recalculateBankBalances()
                 self.isLoading = false
                 NotificationCenter.default.post(name: NSNotification.Name("BankLoadingStateChanged"), object: nil)
+                // Cache banks to AppGroup disk so Share Extension can read without Firebase Auth
+                let cached = list.map { CachedBank(id: $0.id, name: $0.name, logo: $0.logo, order: $0.order) }
+                AppGroupStorage.saveBanks(cached)
             }
         }
         
@@ -227,6 +192,8 @@ class BankOperationsViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 self.quickActions = list
+                let cached = list.map { CachedQuickAction(id: $0.id, name: $0.name, color: $0.color, order: $0.order) }
+                AppGroupStorage.saveQuickActions(cached)
             }
         }
         
@@ -243,6 +210,8 @@ class BankOperationsViewModel: ObservableObject {
             }
             DispatchQueue.main.async {
                 self.transactionTypes = list
+                let cached = list.map { CachedTransactionType(id: $0.id, name: $0.name, order: $0.order) }
+                AppGroupStorage.saveTransactionTypes(cached)
             }
         }
         
@@ -1744,6 +1713,7 @@ struct AddEditTransactionSheetView: View {
     @State private var selectedDate: Date = Date()
     @State private var selectedQAs: Set<String> = []
     @State private var receiptUrl: String = ""
+    @State private var showDrivePicker: Bool = false
     
     private var filteredSuggestions: [String] {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(with: Locale(identifier: "tr_TR"))
@@ -1856,6 +1826,22 @@ struct AddEditTransactionSheetView: View {
                         .buttonStyle(PlainButtonStyle())
                     }
                     .padding(.vertical, 2)
+                    
+                    Button(action: {
+                        showDrivePicker = true
+                    }) {
+                        HStack {
+                            Image(systemName: "icloud.and.arrow.down")
+                                .foregroundColor(.blue)
+                            Text("Google Drive'dan Dekont Seç")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.blue)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                    }
                 }
                 
                 Section(header: Text("Hızlı İşlemler")) {
@@ -1929,6 +1915,11 @@ struct AddEditTransactionSheetView: View {
                     }
                 } else if let firstBank = banks.first(where: { $0.visible })?.id ?? banks.first?.id {
                     selectedBankId = firstBank
+                }
+            }
+            .sheet(isPresented: $showDrivePicker) {
+                GoogleDrivePickerView { selectedFile in
+                    receiptUrl = selectedFile.shareUrl
                 }
             }
         }
