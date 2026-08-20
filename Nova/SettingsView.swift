@@ -104,6 +104,15 @@ struct SettingsView: View {
                         }
                     }
                 }
+                
+                Section(header: Text("Versiyon")) {
+                    HStack {
+                        Text("Uygulama Sürümü")
+                        Spacer()
+                        Text("v2.0.5")
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .navigationTitle("Ayarlar")
             .navigationBarTitleDisplayMode(.inline)

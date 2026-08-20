@@ -405,7 +405,7 @@ class BankOperationsViewModel: ObservableObject {
         }
     }
     
-    func addQuickTransactionInGroup(groupId: String, lastTransaction: BankTransactionItem? = nil) {
+    func addQuickTransactionInGroup(groupId: String, lastTransaction: BankTransactionItem? = nil, completion: ((BankTransactionItem) -> Void)? = nil) {
         guard let user = Auth.auth().currentUser else { return }
         let db = Firestore.firestore()
         let today = DateFormatter()
@@ -434,7 +434,8 @@ class BankOperationsViewModel: ObservableObject {
             quickActions = lastTransaction?.quickActions ?? []
         }
         
-        db.collection("users").document(user.uid).collection("bankTransactions").addDocument(data: [
+        var ref: DocumentReference? = nil
+        ref = db.collection("users").document(user.uid).collection("bankTransactions").addDocument(data: [
             "bankId": bankId,
             "title": "",
             "quickActions": quickActions,
@@ -444,7 +445,27 @@ class BankOperationsViewModel: ObservableObject {
             "receiptUrl": "",
             "createdAt": FieldValue.serverTimestamp(),
             "deleted": false
-        ])
+        ]) { error in
+            if let error = error {
+                print("Error adding transaction: \(error)")
+            } else if let docId = ref?.documentID {
+                let newItem = BankTransactionItem(
+                    id: docId,
+                    bankId: bankId,
+                    title: "",
+                    quickActions: quickActions,
+                    type: typeId,
+                    amount: 0.0,
+                    date: todayStr,
+                    createdAt: Date(),
+                    deleted: false,
+                    receiptUrl: nil
+                )
+                DispatchQueue.main.async {
+                    completion?(newItem)
+                }
+            }
+        }
     }
 }
 
@@ -1302,7 +1323,9 @@ struct GroupSectionView: View {
                 
                 Button(action: {
                     let lastItem = filterLocalGroupItems().first ?? group.items.first
-                    viewModel.addQuickTransactionInGroup(groupId: group.id, lastTransaction: lastItem)
+                    viewModel.addQuickTransactionInGroup(groupId: group.id, lastTransaction: lastItem) { newTrans in
+                        onEditTransaction(newTrans)
+                    }
                 }) {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))

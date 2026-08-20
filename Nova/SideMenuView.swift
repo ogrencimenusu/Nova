@@ -201,6 +201,16 @@ struct SideMenuView: View {
                             )
                     }
                 }
+                
+                // Version
+                HStack {
+                    Spacer()
+                    Text("v2.0.5")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Spacer()
+                }
+                .padding(.top, 2)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 10)

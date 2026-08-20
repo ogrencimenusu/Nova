@@ -560,8 +560,8 @@ struct ShareTransactionFormView: View {
                     HStack {
                         Text("Tutar (₺)")
                         Spacer()
-                        TextField("0,00", text: $amountString)
-                            .keyboardType(.decimalPad)
+                        TextField("0,00 (Örn: -9845,60)", text: $amountString)
+                            .keyboardType(.numbersAndPunctuation)
                             .multilineTextAlignment(.trailing)
                     }
                     
@@ -612,6 +612,7 @@ struct ShareTransactionFormView: View {
                                             .foregroundColor(.blue)
                                     }
                                 }
+                                .contentShape(Rectangle())
                                 .padding(.vertical, 4)
                             }
                             .buttonStyle(PlainButtonStyle())
@@ -801,14 +802,30 @@ struct ShareTransactionFormView: View {
                 self.savingStatusText = "İşlem Kaydediliyor..."
             }
             
-            let amount = Double(self.amountString.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")) ?? 0.0
+            var cleanStr = self.amountString
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "₺", with: "")
+                .replacingOccurrences(of: "TL", with: "")
+                .replacingOccurrences(of: "TRY", with: "")
+            
+            let isNegative = cleanStr.hasPrefix("-")
+            if isNegative {
+                cleanStr = String(cleanStr.dropFirst())
+            }
+            
+            cleanStr = cleanStr.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            var amount = Double(cleanStr) ?? 0.0
+            if isNegative {
+                amount = -amount
+            }
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
             let dateStr = formatter.string(from: self.selectedDate)
             
             var data: [String: Any] = [
                 "bankId": self.selectedBankId,
-                "title": self.titleText.isEmpty ? "Dekont İçe Aktarma" : self.titleText,
+                "title": self.titleText.trimmingCharacters(in: .whitespacesAndNewlines),
                 "type": self.selectedTypeId,
                 "quickActions": Array(self.selectedQAs),
                 "amount": amount,

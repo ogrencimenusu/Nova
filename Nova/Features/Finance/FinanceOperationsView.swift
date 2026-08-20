@@ -2323,6 +2323,7 @@ enum AnalysisLayout: String, CaseIterable {
     case hisseGenel  = "hisse_genel"
     case kurumMevcut = "kurum_mevcut"
     case kurumGenel  = "kurum_genel"
+    case yillaraGore = "yillara_gore"
 
     var title: String {
         switch self {
@@ -2330,6 +2331,7 @@ enum AnalysisLayout: String, CaseIterable {
         case .hisseGenel: return "Hisse Genel"
         case .kurumMevcut: return "Kurum Dagilimi"
         case .kurumGenel: return "Kurum Genel"
+        case .yillaraGore: return "Yillara Gore"
         }
     }
     var isHisse: Bool { self == .hisseMevcut || self == .hisseGenel }
@@ -2342,9 +2344,201 @@ struct FinancePortfolioAnalysisSection: View {
     let processedLots: [ProcessedFinanceLot]
     let onSelectStock: (FinanceStockItem) -> Void
 
-    @State private var layout: AnalysisLayout = .hisseMevcut
+    @State private var layout: AnalysisLayout = .yillaraGore
     @State private var hoveredIdx: Int? = nil
     @State private var showAll: Bool = false
+    @State private var selectedYear: String = ""
+    @State private var performanceViewMode: String = "eski" // "eski" or "devam_eden"
+    @State private var expandedMonths: [String: Bool] = [:]
+
+    // MARK: - Yearly Performance Calculations
+    private var availableYears: [String] {
+        let years = Set(processedLots.compactMap { lot -> String? in
+            guard lot.date.count >= 4 else { return nil }
+            let y = String(lot.date.prefix(4))
+            return y.allSatisfy { $0.isNumber } ? y : nil
+        })
+        if years.isEmpty {
+            let cur = String(Calendar.current.component(.year, from: Date()))
+            return [cur]
+        }
+        return Array(years).sorted(by: >)
+    }
+
+    private var activeYear: String {
+        if selectedYear == "tumu" { return "tumu" }
+        if !selectedYear.isEmpty && availableYears.contains(selectedYear) { return selectedYear }
+        return availableYears.first ?? String(Calendar.current.component(.year, from: Date()))
+    }
+
+    struct MonthPerformance: Identifiable {
+        var id: String { monthKey }
+        let monthKey: String
+        let monthName: String
+        var netProfit: Double
+        var taxDeduction: Double
+        var buyAmount: Double
+        var saleAmount: Double
+        var costBasis: Double
+        var buyCount: Int
+        var saleCount: Int
+        var stocksList: [StockBreakdown]
+
+        var hasActivity: Bool { buyCount > 0 || saleCount > 0 }
+        var profitPercent: Double { costBasis > 0 ? (netProfit / costBasis) * 100 : 0 }
+    }
+
+    struct StockBreakdown: Identifiable {
+        var id: String { stockId }
+        let stockId: String
+        let stockName: String
+        var buyQty: Double
+        var sellQty: Double
+        var buyAmount: Double
+        var saleAmount: Double
+        var netProfit: Double
+        var taxDeduction: Double
+        var costBasis: Double
+        var txCount: Int
+
+        var profitPercent: Double { costBasis > 0 ? (netProfit / costBasis) * 100 : 0 }
+    }
+
+    struct YearlySummary {
+        var netProfit: Double = 0
+        var taxDeduction: Double = 0
+        var buyAmount: Double = 0
+        var saleAmount: Double = 0
+        var costBasis: Double = 0
+        var profitPercent: Double = 0
+        var totalTxCount: Int = 0
+        var buyCount: Int = 0
+        var saleCount: Int = 0
+        var bestMonthName: String? = nil
+        var bestMonthProfit: Double = 0
+    }
+
+    private let monthNames: [(key: String, name: String)] = [
+        ("01", "Ocak"), ("02", "Şubat"), ("03", "Mart"), ("04", "Nisan"),
+        ("05", "Mayıs"), ("06", "Haziran"), ("07", "Temmuz"), ("08", "Ağustos"),
+        ("09", "Eylül"), ("10", "Ekim"), ("11", "Kasım"), ("12", "Aralık")
+    ]
+
+    private var yearlyData: (months: [MonthPerformance], summary: YearlySummary) {
+        let filteredLots = activeYear == "tumu"
+            ? processedLots
+            : processedLots.filter { $0.date.hasPrefix(activeYear) }
+
+        var totalNetProfit: Double = 0
+        var totalTax: Double = 0
+        var totalBuyAmt: Double = 0
+        var totalSaleAmt: Double = 0
+        var totalCostBasis: Double = 0
+        var totalBuyCount: Int = 0
+        var totalSaleCount: Int = 0
+
+        var monthMap: [String: (buyAmt: Double, saleAmt: Double, netProfit: Double, tax: Double, cost: Double, buyCount: Int, saleCount: Int, stocks: [String: StockBreakdown])] = [:]
+        for m in monthNames {
+            monthMap[m.key] = (0, 0, 0, 0, 0, 0, 0, [:])
+        }
+
+        for lot in filteredLots {
+            guard lot.date.count >= 7 else { continue }
+            let mKey = String(lot.date.prefix(7).suffix(2))
+            guard monthMap[mKey] != nil else { continue }
+
+            let isBuy = lot.type.hasPrefix("AL")
+            let sInfo = FinanceOperationsViewModel.shared.stocks.first(where: { $0.id == lot.stockId })
+            let stockName = sInfo?.name ?? lot.stockId
+
+            if monthMap[mKey]!.stocks[lot.stockId] == nil {
+                monthMap[mKey]!.stocks[lot.stockId] = StockBreakdown(
+                    stockId: lot.stockId,
+                    stockName: stockName,
+                    buyQty: 0,
+                    sellQty: 0,
+                    buyAmount: 0,
+                    saleAmount: 0,
+                    netProfit: 0,
+                    taxDeduction: 0,
+                    costBasis: 0,
+                    txCount: 0
+                )
+            }
+            monthMap[mKey]!.stocks[lot.stockId]!.txCount += 1
+
+            if isBuy {
+                let bAmt = lot.totalBuyAmount > 0 ? lot.totalBuyAmount : (lot.quantity * lot.price)
+                monthMap[mKey]!.buyAmt += bAmt
+                monthMap[mKey]!.buyCount += 1
+                monthMap[mKey]!.stocks[lot.stockId]!.buyQty += lot.quantity
+                monthMap[mKey]!.stocks[lot.stockId]!.buyAmount += bAmt
+
+                totalBuyAmt += bAmt
+                totalBuyCount += 1
+            } else {
+                let sAmt = lot.totalSaleAmount > 0 ? lot.totalSaleAmount : (lot.quantity * lot.price)
+                let profit = lot.totalProfit
+                let tax = lot.calculatedTaxDeduction
+                let cost = lot.costBasis
+
+                monthMap[mKey]!.saleAmt += sAmt
+                monthMap[mKey]!.netProfit += profit
+                monthMap[mKey]!.tax += tax
+                monthMap[mKey]!.cost += cost
+                monthMap[mKey]!.saleCount += 1
+
+                monthMap[mKey]!.stocks[lot.stockId]!.sellQty += lot.quantity
+                monthMap[mKey]!.stocks[lot.stockId]!.saleAmount += sAmt
+                monthMap[mKey]!.stocks[lot.stockId]!.netProfit += profit
+                monthMap[mKey]!.stocks[lot.stockId]!.taxDeduction += tax
+                monthMap[mKey]!.stocks[lot.stockId]!.costBasis += cost
+
+                totalSaleAmt += sAmt
+                totalNetProfit += profit
+                totalTax += tax
+                totalCostBasis += cost
+                totalSaleCount += 1
+            }
+        }
+
+        let monthsList: [MonthPerformance] = monthNames.map { m in
+            let d = monthMap[m.key]!
+            let sortedStocks = Array(d.stocks.values).sorted { $0.netProfit > $1.netProfit }
+            return MonthPerformance(
+                monthKey: m.key,
+                monthName: m.name,
+                netProfit: d.netProfit,
+                taxDeduction: d.tax,
+                buyAmount: d.buyAmt,
+                saleAmount: d.saleAmt,
+                costBasis: d.cost,
+                buyCount: d.buyCount,
+                saleCount: d.saleCount,
+                stocksList: sortedStocks
+            )
+        }
+
+        let activeSales = monthsList.filter { $0.saleCount > 0 }
+        let bestMonth = activeSales.max(by: { $0.netProfit < $1.netProfit })
+
+        let pct = totalCostBasis > 0 ? (totalNetProfit / totalCostBasis) * 100 : 0
+        let summary = YearlySummary(
+            netProfit: totalNetProfit,
+            taxDeduction: totalTax,
+            buyAmount: totalBuyAmt,
+            saleAmount: totalSaleAmt,
+            costBasis: totalCostBasis,
+            profitPercent: pct,
+            totalTxCount: totalBuyCount + totalSaleCount,
+            buyCount: totalBuyCount,
+            saleCount: totalSaleCount,
+            bestMonthName: bestMonth?.monthName,
+            bestMonthProfit: bestMonth?.netProfit ?? 0
+        )
+
+        return (monthsList, summary)
+    }
 
     private var analysisItems: [AnalysisItem] {
         switch layout {
@@ -2402,6 +2596,8 @@ struct FinancePortfolioAnalysisSection: View {
                                      dailyGain: stats.dailyGain, percentage: 0,
                                      isActive: stats.currentValue > 0, color: chartColors[i % chartColors.count])
             }.sorted { $0.value > $1.value }
+        case .yillaraGore:
+            return []
         }
     }
 
@@ -2430,7 +2626,7 @@ struct FinancePortfolioAnalysisSection: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Portfoy Analizi").font(.system(size: 20, weight: .bold, design: .rounded))
-                Text("Mevcut hisse dagilimlar\u{131} ve kurum bazl\u{131} finansal ozetler")
+                Text("Mevcut hisse dagilimlar\u{131}, kurum bazl\u{131} finansal ozetler ve donemsel performans")
                     .font(.system(size: 13)).foregroundColor(.secondary)
             }.padding(.horizontal, 16)
 
@@ -2449,82 +2645,92 @@ struct FinancePortfolioAnalysisSection: View {
                 }.padding(.horizontal, 16)
             }
 
-            VStack(spacing: 16) {
-                VStack(spacing: 12) {
-                    Text(layout.isHisse ? (layout == .hisseMevcut ? "HISSE DAGILIMI (MEVCUT)" : "HISSE DAGILIMI (GENEL)") :
-                         (layout == .kurumMevcut ? "KURUMSAL DAGILIM (MEVCUT)" : "KURUMSAL DAGILIM (GENEL)"))
-                        .font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if layout == .yillaraGore {
+                yillaraGoreView
+            } else {
+                defaultAnalysisView
+            }
+        }
+    }
 
-                    if itemsWithPct.filter({ $0.value > 0 }).isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "chart.pie").font(.system(size: 28)).foregroundColor(.gray.opacity(0.3))
-                            Text("Veri bulunamad\u{131}").font(.system(size: 12)).foregroundColor(.secondary)
-                        }.frame(height: 150)
-                    } else {
-                        DonutChartView(items: itemsWithPct.filter { $0.value > 0 },
-                                       totalValue: totalValue, totalProfit: totalProfit,
-                                       totalTax: totalTax, profitPct: profitPct,
-                                       hoveredIdx: $hoveredIdx)
-                        .frame(height: 160)
-                    }
+    // MARK: - Standard Portfolio Layout View
+    private var defaultAnalysisView: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 12) {
+                Text(layout.isHisse ? (layout == .hisseMevcut ? "HISSE DAGILIMI (MEVCUT)" : "HISSE DAGILIMI (GENEL)") :
+                     (layout == .kurumMevcut ? "KURUMSAL DAGILIM (MEVCUT)" : "KURUMSAL DAGILIM (GENEL)"))
+                    .font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if itemsWithPct.filter({ $0.value > 0 }).isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "chart.pie").font(.system(size: 28)).foregroundColor(.gray.opacity(0.3))
+                        Text("Veri bulunamad\u{131}").font(.system(size: 12)).foregroundColor(.secondary)
+                    }.frame(height: 150)
+                } else {
+                    DonutChartView(items: itemsWithPct.filter { $0.value > 0 },
+                                   totalValue: totalValue, totalProfit: totalProfit,
+                                   totalTax: totalTax, profitPct: profitPct,
+                                   hoveredIdx: $hoveredIdx)
+                    .frame(height: 160)
                 }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
-                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 16)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(layout.isHisse ? (layout == .hisseMevcut ? "HISSE DETAYLARI (MEVCUT)" : "HISSE DETAYLARI (GENEL)") :
-                             (layout == .kurumMevcut ? "KURUMSAL OZETLER (MEVCUT)" : "KURUMSAL OZETLER (GENEL)"))
-                            .font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(analysisItems.count)")
-                            .font(.system(size: 10, weight: .bold)).foregroundColor(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.blue).cornerRadius(10)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(layout.isHisse ? (layout == .hisseMevcut ? "HISSE DETAYLARI (MEVCUT)" : "HISSE DETAYLARI (GENEL)") :
+                         (layout == .kurumMevcut ? "KURUMSAL OZETLER (MEVCUT)" : "KURUMSAL OZETLER (GENEL)"))
+                        .font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(analysisItems.count)")
+                        .font(.system(size: 10, weight: .bold)).foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.blue).cornerRadius(10)
+                }
 
-                    if displayedItems.isEmpty {
-                        Text("Veri bulunamad\u{131}.").font(.system(size: 13)).foregroundColor(.secondary).padding(.vertical, 12)
-                    } else {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 0) {
-                                Text(layout.isHisse ? "HISSE" : "KURUM").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
-                                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                                if layout.isHisse {
-                                    Text("ADET").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 58, alignment: .trailing)
-                                } else {
-                                    Text("GUNLUK").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 58, alignment: .trailing)
-                                }
-                                Text("PAY").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 44, alignment: .trailing)
-                                Text("NET K/Z").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 105, alignment: .trailing)
+                if displayedItems.isEmpty {
+                    Text("Veri bulunamad\u{131}.").font(.system(size: 13)).foregroundColor(.secondary).padding(.vertical, 12)
+                } else {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            Text(layout.isHisse ? "HISSE" : "KURUM").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary)
+                                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                            if layout.isHisse {
+                                Text("ADET").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 58, alignment: .trailing)
+                            } else {
+                                Text("GUNLUK").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 58, alignment: .trailing)
                             }
-                            .padding(.vertical, 6)
-                            .padding(.bottom, 2)
-                            Divider()
+                            Text("PAY").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 44, alignment: .trailing)
+                            Text("NET K/Z").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 105, alignment: .trailing)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.bottom, 2)
+                        Divider()
 
-                            ForEach(Array(displayedItems.enumerated()), id: \.1.id) { i, item in
-                                analysisRow(item, idx: i)
-                                    .contentShape(Rectangle())
-                            }
+                        ForEach(Array(displayedItems.enumerated()), id: \.1.id) { i, item in
+                            analysisRow(item, idx: i)
+                                .contentShape(Rectangle())
+                        }
 
-                            if layout == .hisseGenel && itemsWithPct.count > 10 {
-                                Button(action: { showAll.toggle() }) {
-                                    Text(showAll ? "Daha Az Goster" : "Devamini Gor (\(itemsWithPct.count - 10) daha)")
-                                        .font(.system(size: 12, weight: .semibold)).foregroundColor(.blue)
-                                        .padding(.top, 8)
-                                }
+                        if layout == .hisseGenel && itemsWithPct.count > 10 {
+                            Button(action: { showAll.toggle() }) {
+                                Text(showAll ? "Daha Az Goster" : "Devamini Gor (\(itemsWithPct.count - 10) daha)")
+                                    .font(.system(size: 12, weight: .semibold)).foregroundColor(.blue)
+                                    .padding(.top, 8)
                             }
                         }
                     }
                 }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
-                .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
             }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
             .padding(.horizontal, 16)
 
             HStack(spacing: 10) {
@@ -2539,6 +2745,404 @@ struct FinancePortfolioAnalysisSection: View {
                 )
             }
             .padding(.horizontal, 16)
+        }
+    }
+
+    // MARK: - Yıllara Göre Layout View
+    private var yillaraGoreView: some View {
+        let (months, summary) = yearlyData
+        let isDevamEden = performanceViewMode == "devam_eden"
+
+        let activeNetProfit = portfolio.reduce(0.0) { $0 + $1.totalProfit }
+        let activeTax = portfolio.reduce(0.0) { $0 + $1.totalTaxDeduction }
+        let activeGross = activeNetProfit + activeTax
+        let activeTotalCost = portfolio.reduce(0.0) { $0 + $1.totalCost }
+        let activeTotalVal = portfolio.reduce(0.0) { $0 + ($1.currentPrice * $1.quantity) }
+        let activePct = activeTotalCost > 0 ? (activeNetProfit / activeTotalCost) * 100 : 0
+
+        let realizedNetProfit = summary.netProfit
+        let realizedTax = summary.taxDeduction
+        let realizedGross = realizedNetProfit + realizedTax
+        let realizedPct = summary.profitPercent
+
+        let netProfit = isDevamEden ? activeNetProfit : realizedNetProfit
+        let tax = isDevamEden ? activeTax : realizedTax
+        let gross = isDevamEden ? activeGross : realizedGross
+        let profitPct = isDevamEden ? activePct : realizedPct
+        let countText = isDevamEden ? "\(portfolio.count) hisse/fon" : "\(summary.totalTxCount) islem"
+
+        let totalDenominator = abs(netProfit) + abs(tax)
+        let profitRatio = totalDenominator > 0 ? abs(netProfit) / totalDenominator : 0.0
+        let taxRatio = totalDenominator > 0 ? abs(tax) / totalDenominator : 0.0
+
+        return VStack(spacing: 16) {
+            VStack(spacing: 14) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(isDevamEden ? "DEVAM EDEN PORTFOY PERFORMANSI" : (activeYear == "tumu" ? "TOPLAM PERFORMANS" : "\(activeYear) PERFORMANS"))
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        Text((netProfit >= 0 ? "+" : "") + formatTL(netProfit))
+                            .font(.system(size: 20, weight: .bold, design: .rounded))
+                            .foregroundColor(netProfit >= 0 ? .green : .red)
+
+                        HStack(spacing: 6) {
+                            Text((netProfit >= 0 ? "▲ +" : "▼ ") + String(format: "%.2f%%", profitPct))
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background((netProfit >= 0 ? Color.green : Color.red).opacity(0.12))
+                                .foregroundColor(netProfit >= 0 ? .green : .red)
+                                .cornerRadius(8)
+
+                            Text(countText)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 2) {
+                        Button(action: { performanceViewMode = "eski" }) {
+                            Text("Eski")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(performanceViewMode == "eski" ? Color.primary : Color.clear)
+                                .foregroundColor(performanceViewMode == "eski" ? Color(UIColor.systemBackground) : .secondary)
+                                .cornerRadius(12)
+                        }
+                        Button(action: { performanceViewMode = "devam_eden" }) {
+                            Text("Devam Eden")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(performanceViewMode == "devam_eden" ? Color.blue : Color.clear)
+                                .foregroundColor(performanceViewMode == "devam_eden" ? .white : .secondary)
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(2)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(14)
+                }
+
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.gray.opacity(0.12), lineWidth: 14)
+                            .frame(width: 120, height: 120)
+
+                        if profitRatio > 0 {
+                            Circle()
+                                .trim(from: 0, to: CGFloat(profitRatio))
+                                .stroke(netProfit >= 0 ? Color.green : Color.red, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                                .frame(width: 120, height: 120)
+                                .rotationEffect(.degrees(-90))
+                        }
+
+                        if taxRatio > 0 {
+                            Circle()
+                                .trim(from: CGFloat(profitRatio), to: CGFloat(profitRatio + taxRatio))
+                                .stroke(Color.red.opacity(0.85), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                                .frame(width: 120, height: 120)
+                                .rotationEffect(.degrees(-90))
+                        }
+
+                        VStack(spacing: 1) {
+                            Text("NET / BRUT").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+                            Text(gross > 0 ? String(format: "%.0f%%", (netProfit / gross) * 100) : "—")
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.primary)
+                            Text("verimlilik").font(.system(size: 8)).foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(width: 130, height: 130)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                Circle().fill(netProfit >= 0 ? Color.green : Color.red).frame(width: 8, height: 8)
+                                Text("NET KAR/ZARAR").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+                            }
+                            Text((netProfit >= 0 ? "+" : "") + formatTL(netProfit, decimals: 0))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(netProfit >= 0 ? .green : .red)
+                            if profitRatio > 0 {
+                                Text(String(format: "%.1f%% pay", profitRatio * 100))
+                                    .font(.system(size: 8)).foregroundColor(.secondary)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.red.opacity(0.85)).frame(width: 8, height: 8)
+                                Text("STOPAJ KESINTI").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+                            }
+                            Text("-" + formatTL(tax, decimals: 0))
+                                .font(.system(size: 13, weight: .bold)).foregroundColor(.red)
+                            if taxRatio > 0 {
+                                Text(String(format: "%.1f%% pay", taxRatio * 100))
+                                    .font(.system(size: 8)).foregroundColor(.secondary)
+                            }
+                        }
+
+                        if gross != 0 {
+                            VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 4) {
+                                    RoundedRectangle(cornerRadius: 2).fill(Color.gray.opacity(0.3)).frame(width: 8, height: 8)
+                                    Text("BRUT KAR").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+                                }
+                                Text(formatTL(gross, decimals: 0))
+                                    .font(.system(size: 12, weight: .bold)).foregroundColor(.primary)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+
+                Divider()
+
+                HStack {
+                    if isDevamEden {
+                        miniStat(title: "TOPLAM DEGER", val: formatTL(activeTotalVal, decimals: 0))
+                        Spacer()
+                        miniStat(title: "TOPLAM MALIYET", val: formatTL(activeTotalCost, decimals: 0))
+                        Spacer()
+                        miniStat(title: "AKTIF ENSTRUMAN", val: "\(portfolio.count) Adet")
+                    } else {
+                        miniStat(title: "EN IYI AY", val: summary.bestMonthName ?? "-")
+                        Spacer()
+                        miniStat(title: "SATIS", val: formatTL(summary.saleAmount, decimals: 0))
+                        Spacer()
+                        miniStat(title: "AKTIF AY", val: "\(months.filter { $0.hasActivity }.count)/12")
+                    }
+                }
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 16)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeYear == "tumu" ? "Tum Zamanlar" : "\(activeYear) Performansi")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Aylik Kirilim")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            Button(action: { selectedYear = "tumu"; expandedMonths = [:] }) {
+                                Text("Tumu")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(activeYear == "tumu" ? Color.primary : Color.clear)
+                                    .foregroundColor(activeYear == "tumu" ? Color(UIColor.systemBackground) : .secondary)
+                                    .cornerRadius(10)
+                            }
+                            ForEach(availableYears, id: \.self) { y in
+                                Button(action: { selectedYear = y; expandedMonths = [:] }) {
+                                    Text(y)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .padding(.horizontal, 8).padding(.vertical, 4)
+                                        .background(activeYear == y ? Color.blue : Color.clear)
+                                        .foregroundColor(activeYear == y ? .white : .secondary)
+                                        .cornerRadius(10)
+                                }
+                            }
+                        }
+                        .padding(2)
+                        .background(Color.gray.opacity(0.08))
+                        .cornerRadius(12)
+                    }
+                }
+
+                Divider()
+
+                HStack(spacing: 0) {
+                    Text("AY").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 75, alignment: .leading)
+                    Text("ALIS / SATIS").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(maxWidth: .infinity, alignment: .trailing)
+                    Text("STOPAJ").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 75, alignment: .trailing)
+                    Text("NET K/Z").font(.system(size: 9, weight: .bold)).foregroundColor(.secondary).frame(width: 85, alignment: .trailing)
+                }
+                .padding(.vertical, 2)
+
+                VStack(spacing: 0) {
+                    ForEach(months) { m in
+                        monthlyPerformanceRow(m)
+                    }
+                }
+
+                Divider()
+
+                HStack(spacing: 8) {
+                    VStack(spacing: 2) {
+                        Text("SATIS").font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+                        Text(formatTL(summary.saleAmount, decimals: 0)).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.06)).cornerRadius(8)
+
+                    VStack(spacing: 2) {
+                        Text("STOPAJ").font(.system(size: 8, weight: .bold)).foregroundColor(.red)
+                        Text("-" + formatTL(summary.taxDeduction, decimals: 0)).font(.system(size: 11, weight: .bold)).foregroundColor(.red)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.08)).cornerRadius(8)
+
+                    VStack(spacing: 2) {
+                        Text("NET KAR").font(.system(size: 8, weight: .bold)).foregroundColor(summary.netProfit >= 0 ? .green : .red)
+                        Text((summary.netProfit >= 0 ? "+" : "") + formatTL(summary.netProfit, decimals: 0))
+                            .font(.system(size: 11, weight: .bold)).foregroundColor(summary.netProfit >= 0 ? .green : .red)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background((summary.netProfit >= 0 ? Color.green : Color.red).opacity(0.1)).cornerRadius(8)
+                }
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.gray.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func miniStat(title: String, val: String) -> some View {
+        VStack(spacing: 2) {
+            Text(title).font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+            Text(val).font(.system(size: 11, weight: .bold)).foregroundColor(.primary)
+        }
+    }
+
+    private func monthlyPerformanceRow(_ m: MonthPerformance) -> some View {
+        let isExpanded = expandedMonths[m.monthKey] == true
+        let hasActivity = m.hasActivity
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                HStack(spacing: 4) {
+                    if hasActivity {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.blue)
+                    } else {
+                        Spacer().frame(width: 9)
+                    }
+                    Text(m.monthName)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(hasActivity ? .primary : .secondary.opacity(0.6))
+                    if hasActivity {
+                        Text("\(m.buyCount + m.saleCount)")
+                            .font(.system(size: 8, weight: .bold))
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Color.gray.opacity(0.12)).cornerRadius(6)
+                    }
+                }
+                .frame(width: 75, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 1) {
+                    if m.saleAmount > 0 {
+                        Text("S: " + formatTL(m.saleAmount, decimals: 0))
+                            .font(.system(size: 10, weight: .medium)).foregroundColor(.green)
+                    }
+                    if m.buyAmount > 0 {
+                        Text("A: " + formatTL(m.buyAmount, decimals: 0))
+                            .font(.system(size: 10, weight: .medium)).foregroundColor(.blue)
+                    }
+                    if m.saleAmount == 0 && m.buyAmount == 0 {
+                        Text("-").font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+                VStack(alignment: .trailing, spacing: 1) {
+                    if m.taxDeduction > 0 {
+                        Text("-" + formatTL(m.taxDeduction, decimals: 0))
+                            .font(.system(size: 10, weight: .bold)).foregroundColor(.red)
+                    } else {
+                        Text("-").font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 75, alignment: .trailing)
+
+                VStack(alignment: .trailing, spacing: 1) {
+                    if m.saleCount > 0 {
+                        Text((m.netProfit >= 0 ? "+" : "") + formatTL(m.netProfit, decimals: 0))
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(m.netProfit >= 0 ? .green : .red)
+                        if m.costBasis > 0 {
+                            Text(String(format: "(%@%.1f%%)", m.netProfit >= 0 ? "+" : "", m.profitPercent))
+                                .font(.system(size: 8)).foregroundColor(.secondary)
+                        }
+                    } else {
+                        Text("-").font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 85, alignment: .trailing)
+            }
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if hasActivity {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedMonths[m.monthKey] = !isExpanded
+                    }
+                }
+            }
+
+            if isExpanded && hasActivity {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(m.monthName) \(activeYear == "tumu" ? "" : activeYear) - HISSE KIRILIMI")
+                        .font(.system(size: 8, weight: .bold)).foregroundColor(.secondary)
+
+                    ForEach(m.stocksList) { stk in
+                        HStack(spacing: 0) {
+                            Text(stk.stockName)
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 75, alignment: .leading)
+                                .lineLimit(1)
+
+                            HStack(spacing: 2) {
+                                if stk.sellQty > 0 {
+                                    Text("\(formatQty(stk.sellQty)) Satış").foregroundColor(.red)
+                                }
+                                if stk.sellQty > 0 && stk.buyQty > 0 {
+                                    Text("/").foregroundColor(.secondary)
+                                }
+                                if stk.buyQty > 0 {
+                                    Text("\(formatQty(stk.buyQty)) Alış").foregroundColor(.blue)
+                                }
+                            }
+                            .font(.system(size: 9, weight: .medium))
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+
+                            Text(stk.taxDeduction > 0 ? "-" + formatTL(stk.taxDeduction, decimals: 0) : "-")
+                                .font(.system(size: 9, weight: .semibold)).foregroundColor(.red)
+                                .frame(width: 75, alignment: .trailing)
+
+                            Text(stk.sellQty > 0 ? (stk.netProfit >= 0 ? "+" : "") + formatTL(stk.netProfit, decimals: 0) : "Alış")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(stk.sellQty > 0 ? (stk.netProfit >= 0 ? .green : .red) : .secondary)
+                                .frame(width: 85, alignment: .trailing)
+                        }
+                        .padding(.vertical, 3)
+                        Divider()
+                    }
+                }
+                .padding(10)
+                .background(Color.gray.opacity(0.04))
+                .cornerRadius(10)
+                .padding(.bottom, 6)
+            }
+
+            Divider()
         }
     }
 

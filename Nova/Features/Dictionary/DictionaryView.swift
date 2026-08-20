@@ -2946,6 +2946,10 @@ struct PratikContentView: View {
             loadSavedPracticeTests()
             fetchTodayStats()
             recalculateAvailableWords()
+            
+            if viewMode != "results" && loadActiveTestState() {
+                viewMode = "active"
+            }
         }
         .onChange(of: allWords.count) { _ in recalculateAvailableWords() }
         .onChange(of: savedPracticeTests.count) { _ in recalculateAvailableWords() }
@@ -2957,6 +2961,15 @@ struct PratikContentView: View {
         .onChange(of: statusYeni) { _ in recalculateAvailableWords() }
         .onChange(of: statusOgreniyor) { _ in recalculateAvailableWords() }
         .onChange(of: statusOgrendi) { _ in recalculateAvailableWords() }
+        .onChange(of: userAnswersMap) { _ in saveActiveTestState() }
+        .onChange(of: revealedHintIndicesMap) { _ in saveActiveTestState() }
+        .onChange(of: hiddenOptionsMap) { _ in saveActiveTestState() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
+            saveActiveTestState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            saveActiveTestState()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RunQuickTestInPratik"))) { notification in
             if let testId = notification.object as? String {
                 executeQuickTestById(testId)
@@ -3020,6 +3033,41 @@ struct PratikContentView: View {
                 }
             }
         }
+    }
+    
+    // MARK: - Active In-Progress Test Persistence
+    private func saveActiveTestState() {
+        guard !activeQuestions.isEmpty && viewMode == "active" else { return }
+        let state = ActiveTestState(
+            activeQuestions: activeQuestions,
+            userAnswersMap: userAnswersMap,
+            hiddenOptionsMap: hiddenOptionsMap,
+            revealedHintIndicesMap: revealedHintIndicesMap,
+            activeTestId: activeTestId,
+            savedAt: Date()
+        )
+        if let data = try? JSONEncoder().encode(state) {
+            UserDefaults.standard.set(data, forKey: "pratik_active_test_state")
+        }
+    }
+    
+    private func clearActiveTestState() {
+        UserDefaults.standard.removeObject(forKey: "pratik_active_test_state")
+    }
+    
+    @discardableResult
+    private func loadActiveTestState() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: "pratik_active_test_state"),
+              let state = try? JSONDecoder().decode(ActiveTestState.self, from: data),
+              !state.activeQuestions.isEmpty else {
+            return false
+        }
+        self.activeQuestions = state.activeQuestions
+        self.userAnswersMap = state.userAnswersMap
+        self.hiddenOptionsMap = state.hiddenOptionsMap
+        self.revealedHintIndicesMap = state.revealedHintIndicesMap
+        self.activeTestId = state.activeTestId
+        return true
     }
     
     // MARK: - Save and Load Pratik Settings
@@ -3144,6 +3192,67 @@ struct PratikContentView: View {
     private var optionsSetupView: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
+                // In-Progress Test Resume Banner
+                if !activeQuestions.isEmpty {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue.opacity(0.12))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "play.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.blue)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Devam Eden Testiniz Var")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundColor(.primary)
+                            Text("\(userAnswersMap.count)/\(activeQuestions.count) soru yanıtlandı • Kaldığınız yerden devam edin")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            withAnimation {
+                                viewMode = "active"
+                            }
+                        }) {
+                            Text("Devam Et")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color.blue)
+                                .cornerRadius(10)
+                        }
+                        
+                        Button(action: {
+                            clearActiveTestState()
+                            withAnimation {
+                                activeQuestions.removeAll()
+                                userAnswersMap.removeAll()
+                                hiddenOptionsMap.removeAll()
+                                revealedHintIndicesMap.removeAll()
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundColor(.gray.opacity(0.5))
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.white)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                
                 // 1. Purple/Blue Premium Gradient Banner
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
@@ -3690,12 +3799,17 @@ struct PratikContentView: View {
                 .alert("Testten Çıksın mı?", isPresented: $showExitTestAlert) {
                     Button("Devam Et", role: .cancel) { }
                     Button("Testi Sonlandır", role: .destructive) {
+                        clearActiveTestState()
                         withAnimation {
+                            activeQuestions.removeAll()
+                            userAnswersMap.removeAll()
+                            hiddenOptionsMap.removeAll()
+                            revealedHintIndicesMap.removeAll()
                             viewMode = "options"
                         }
                     }
                 } message: {
-                    Text("Devam eden testiniz sonlandırılacaktır. İlerlemeniz kaydedilmeyecektir.")
+                    Text("Devam eden testiniz sonlandırılacaktır.")
                 }
                 
                 // Single Vertical ScrollView with ScrollViewReader for Auto-Scroll to Top
@@ -3745,8 +3859,8 @@ struct PratikContentView: View {
                                             .buttonStyle(.plain)
                                             
                                             // 2. Hint Button (💡 Icon Only)
-                                            let maxHints: Int = q.questionType == "written" ? q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).count : (q.questionType == "tf" ? 0 : min(2, max(0, q.options.count - 1)))
-                                            let usedHints: Int = q.questionType == "written" ? (revealedHintIndicesMap[idx] ?? []).count : (hiddenOptionsMap[idx] ?? []).count
+                                            let maxHints: Int = q.questionType == "written" ? q.correctAnswer.trimmingCharacters(in: .whitespacesAndNewlines).count : (q.questionType == "tf" ? 0 : (q.questionType == "flashcard" ? 1 : min(2, max(0, q.options.count - 1))))
+                                            let usedHints: Int = q.questionType == "written" ? (revealedHintIndicesMap[idx] ?? []).count : (q.questionType == "flashcard" ? ((revealedHintIndicesMap[idx] ?? []).contains(999) ? 1 : 0) : (hiddenOptionsMap[idx] ?? []).count)
                                             
                                             if maxHints > 0 {
                                                 Button(action: {
@@ -3764,13 +3878,21 @@ struct PratikContentView: View {
                                                             revealedHintIndicesMap[idx] = updated
                                                         }
                                                         focusedQuestionIdx = idx
-                                                    } else if q.questionType == "mcq" || q.questionType == "flashcard" {
+                                                    } else if q.questionType == "mcq" {
                                                         let wrongOptions = q.options.filter { $0 != q.correctAnswer }
                                                         let currentHidden = hiddenOptionsMap[idx] ?? []
                                                         if let nextToHide = wrongOptions.first(where: { !currentHidden.contains($0) }) {
                                                             var updated = currentHidden
                                                             updated.append(nextToHide)
                                                             hiddenOptionsMap[idx] = updated
+                                                        }
+                                                    } else if q.questionType == "flashcard" {
+                                                        var currentRevealed = revealedHintIndicesMap[idx] ?? []
+                                                        if !currentRevealed.contains(999) {
+                                                            currentRevealed.append(999)
+                                                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                                                revealedHintIndicesMap[idx] = currentRevealed
+                                                            }
                                                         }
                                                     }
                                                 }) {
@@ -4009,6 +4131,12 @@ struct PratikContentView: View {
                                                         Text(q.correctAnswer)
                                                             .font(.system(size: 16, weight: .bold, design: .rounded))
                                                             .foregroundColor(.blue)
+                                                        
+                                                        if let pron = getOptionPronunciation(optText: q.correctAnswer, targetWord: q.targetWord) {
+                                                            Text("(\(pron))")
+                                                                .font(.system(size: 13, design: .rounded))
+                                                                .foregroundColor(.blue.opacity(0.8))
+                                                        }
                                                     }
                                                 }
                                                 .padding(14)
@@ -4835,6 +4963,7 @@ struct PratikContentView: View {
         selectedAnswerOption = nil
         writtenInputText = ""
         viewMode = "active"
+        saveActiveTestState()
     }
     
     // MARK: - Test Creation & Engine Helpers
@@ -4995,6 +5124,7 @@ struct PratikContentView: View {
         withAnimation {
             viewMode = "active"
         }
+        saveActiveTestState()
     }
     
     private func startTestFromQuickTemplate(_ template: QuickTestTemplate) {
@@ -5167,6 +5297,7 @@ struct PratikContentView: View {
     }
     
     private func finishActiveTest() {
+        clearActiveTestState()
         var calculatedResults: [QuestionAnswerResult] = []
         var questionsArray: [[String: Any]] = []
         var answersDict: [String: [String: Any]] = [:]

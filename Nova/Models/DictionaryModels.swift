@@ -54,34 +54,37 @@ public struct StickyNoteModel: Identifiable {
 
 // MARK: - Word Detail Sub-Models
 
-public struct WordMeaning: Identifiable {
-    public let id = UUID()
+public struct WordMeaning: Identifiable, Codable {
+    public var id: UUID = UUID()
     public let definition: String
     public let examples: [WordExample]
     
-    public init(definition: String, examples: [WordExample]) {
+    public init(id: UUID = UUID(), definition: String, examples: [WordExample]) {
+        self.id = id
         self.definition = definition
         self.examples = examples
     }
 }
 
-public struct WordExample: Identifiable {
-    public let id = UUID()
+public struct WordExample: Identifiable, Codable {
+    public var id: UUID = UUID()
     public let en: String
     public let tr: String
     
-    public init(en: String, tr: String) {
+    public init(id: UUID = UUID(), en: String, tr: String) {
+        self.id = id
         self.en = en
         self.tr = tr
     }
 }
 
-public struct WordRelation: Identifiable {
-    public let id = UUID()
+public struct WordRelation: Identifiable, Codable {
+    public var id: UUID = UUID()
     public let word: String
     public let meaning: String
     
-    public init(word: String, meaning: String) {
+    public init(id: UUID = UUID(), word: String, meaning: String) {
+        self.id = id
         self.word = word
         self.meaning = meaning
     }
@@ -89,7 +92,7 @@ public struct WordRelation: Identifiable {
 
 // MARK: - Local Word Model Struct Definition
 
-public struct LocalWord: Identifiable {
+public struct LocalWord: Identifiable, Codable {
     public let id: String
     public let term: String
     public let shortMeanings: String
@@ -158,7 +161,7 @@ public struct LocalWord: Identifiable {
 
 // MARK: - Practice & Quiz Models
 
-public struct PracticeQuestionItem: Identifiable {
+public struct PracticeQuestionItem: Identifiable, Codable {
     public let id: String
     public let wordId: String
     public let targetWord: LocalWord
@@ -195,6 +198,31 @@ public struct PracticeQuestionItem: Identifiable {
         self.statement = statement
         self.exampleSentence = exampleSentence
         self.turkishTranslation = turkishTranslation
+    }
+}
+
+public struct ActiveTestState: Codable {
+    public let activeQuestions: [PracticeQuestionItem]
+    public let userAnswersMap: [Int: String]
+    public let hiddenOptionsMap: [Int: [String]]
+    public let revealedHintIndicesMap: [Int: [Int]]
+    public let activeTestId: String?
+    public let savedAt: Date
+    
+    public init(
+        activeQuestions: [PracticeQuestionItem],
+        userAnswersMap: [Int: String],
+        hiddenOptionsMap: [Int: [String]] = [:],
+        revealedHintIndicesMap: [Int: [Int]] = [:],
+        activeTestId: String? = nil,
+        savedAt: Date = Date()
+    ) {
+        self.activeQuestions = activeQuestions
+        self.userAnswersMap = userAnswersMap
+        self.hiddenOptionsMap = hiddenOptionsMap
+        self.revealedHintIndicesMap = revealedHintIndicesMap
+        self.activeTestId = activeTestId
+        self.savedAt = savedAt
     }
 }
 
